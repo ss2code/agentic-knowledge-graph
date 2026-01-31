@@ -4,7 +4,7 @@ This project provides an agent-based system for building, refining, and visualiz
 
 > **Attribution**: This is an implementation using Antigravity IDE and Google AI Studio. It follows the [Agentic Knowledge Graph Construction](https://learn.deeplearning.ai/courses/agentic-knowledge-graph-construction/) course from DeepLearning.AI. (Please do not delete this attribution).
 
-## 🐣 Quick Start for Novices
+## 🐣 Quick Start
 
 ### Prerequisites
 1.  **Install Python 3.10+** from [python.org](https://www.python.org/downloads/).
