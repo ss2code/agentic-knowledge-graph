@@ -1,0 +1,84 @@
+
+{
+  "Product": {
+    "construction_type": "node",
+    "source_file": "products.csv",
+    "label": "Product",
+    "unique_column_name": "id",
+    "properties": [
+      "id",
+      "name"
+    ]
+  },
+  "ProductCategory": {
+    "construction_type": "node",
+    "source_file": "products.csv",
+    "label": "ProductCategory",
+    "unique_column_name": "category",
+    "properties": [
+      "category"
+    ]
+  },
+  "Ingredient": {
+    "construction_type": "node",
+    "source_file": "products.csv",
+    "label": "Ingredient",
+    "unique_column_name": "ingredients",
+    "rule": "Split column 'ingredients' by comma delimiter to create unique Ingredient nodes from the resulting list.",
+    "properties": [
+      "name"
+    ]
+  },
+  "Review": {
+    "construction_type": "node",
+    "source_file": "reviews.txt",
+    "label": "Review",
+    "unique_column_name": "hash_id",
+    "rule": "Generate a unique hash_id for each row/line of text. Use NLP to calculate 'sentiment_score' and 'sentiment_label' (Positive/Negative) as properties.",
+    "properties": [
+      "text",
+      "sentiment_score",
+      "sentiment_label"
+    ]
+  },
+  "BELONGS_TO": {
+    "construction_type": "relationship",
+    "source_file": "products.csv",
+    "relationship_type": "BELONGS_TO",
+    "from_node_label": "Product",
+    "from_node_column": "id",
+    "to_node_label": "ProductCategory",
+    "to_node_column": "category"
+  },
+  "CONTAINS": {
+    "construction_type": "relationship",
+    "source_file": "products.csv",
+    "relationship_type": "CONTAINS",
+    "from_node_label": "Product",
+    "from_node_column": "id",
+    "to_node_label": "Ingredient",
+    "to_node_column": "ingredients",
+    "rule": "Split 'ingredients' column by comma. Create a relationship for each resulting item in the list."
+  },
+  "ABOUT_PRODUCT": {
+    "construction_type": "relationship",
+    "source_file": "reviews.txt",
+    "relationship_type": "ABOUT_PRODUCT",
+    "from_node_label": "Review",
+    "from_node_column": "text",
+    "to_node_label": "Product",
+    "to_node_column": "name",
+    "rule": "Use NLP Named Entity Recognition (NER) to extract product names (e.g., 'Chianti Classico') from the review text and fuzzy match against Product.name."
+  },
+  "MENTIONS_INGREDIENT": {
+    "construction_type": "relationship",
+    "source_file": "reviews.txt",
+    "relationship_type": "MENTIONS_INGREDIENT",
+    "from_node_label": "Review",
+    "from_node_column": "text",
+    "to_node_label": "Ingredient",
+    "to_node_column": "name",
+    "rule": "Use NLP to extract food entities from review text (e.g., 'Lettuce') and match against Ingredient nodes. This enables tracing a 'soggy' complaint directly to the 'Lettuce' node, not just the parent Product."
+  },
+  "reasoning": "1. **Granularity for Root Cause Analysis**: To identify root causes (e.g., bad lettuce vs. bad pizza crust), we must normalize 'ingredients' from the product file into distinct nodes. This allows us to link specific complaints to specific ingredients via the 'MENTIONS_INGREDIENT' relationship. 2. **Unstructured Data Handling**: Since 'reviews.txt' is unstructured, we rely on NLP injection during the import process to extract entities (Products/Ingredients) and Sentiment. 3. **Sentiment as Property**: We store sentiment on the Review node. Queries can then aggregate negative sentiment reviews linked to specific Ingredients to flag quality control issues."
+}

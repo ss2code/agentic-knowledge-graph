@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.DS_Store
+
+# Logs
+*.log
+data/debug/
+!data/debug/.gitkeep
+
+# Neo4j / Data
+data/user_data/
+!data/user_data/restaraunt_data/
+!data/user_data/.gitkeep
+
+# Generated DBs
+**/neo4j_home/
+# Keep config json files
+# Ignore large artifacts if any
+test_db_debug.txt
+*.log
+
+# Test Artifacts
+data/test_*
+data/test_e2e_golden/
+tests/canned_data/user_data/
+
+# Editor
+.vscode/

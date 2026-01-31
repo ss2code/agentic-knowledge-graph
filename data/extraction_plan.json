@@ -1,0 +1,37 @@
+{
+  "entities": [
+    "Product",
+    "Ingredient",
+    "RootCause",
+    "Sentiment",
+    "ServiceAspect"
+  ],
+  "facts": [
+    {
+      "subject": "Product",
+      "predicate": "CONTAINS",
+      "object": "Ingredient"
+    },
+    {
+      "subject": "Ingredient",
+      "predicate": "HAS_DEFECT",
+      "object": "RootCause"
+    },
+    {
+      "subject": "ServiceAspect",
+      "predicate": "SUFFERS_FROM",
+      "object": "RootCause"
+    },
+    {
+      "subject": "RootCause",
+      "predicate": "TRIGGERS",
+      "object": "Sentiment"
+    },
+    {
+      "subject": "Product",
+      "predicate": "EVOKES",
+      "object": "Sentiment"
+    }
+  ],
+  "model_used": "gemini-3-pro-preview"
+}

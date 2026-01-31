@@ -1,0 +1,6 @@
+{
+  "intent": "Identify Root Causes of Customer Complaints in a Restaurant",
+  "description": "The goal is to trace customer complaints back to their root causes, potentially identifying issues with ingredients or product categories, and also identify key metrics related to customer sentiment for product ideas and categories.",
+  "primary_entities": ["Customer Complaint", "Ingredient", "Product Category", "Customer Sentiment", "Product Idea"],
+  "reasoning": "This is a good Knowledge Graph use case because it requires connecting disparate entities (customer feedback, product components, and abstract sentiment) to understand complex relationships and identify root causes."
+}
