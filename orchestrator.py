@@ -7,6 +7,7 @@ import warnings
 # Suppress Pydantic V1 warnings from Neo4j/LangChain libraries
 try:
     warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
+    warnings.filterwarnings("ignore", message=".*Core Pydantic V1 functionality isn't compatible.*")
 except:
     pass
 
@@ -369,6 +370,13 @@ class Orchestrator:
         if not self.cli_mode:
             input(f"\n{CYAN}Press [Enter] to return...{RESET}")
 
+    def run_text_to_cypher(self):
+        from agents.text_to_cypher_agent import TextToCypherAgent
+        
+        print(f"\n{YELLOW}>> Launching Text-to-Cypher Agent...{RESET}")
+        agent = TextToCypherAgent(api_key=self.api_key, debug_dir=self.context.debug_dir)
+        agent.run_interactive_loop()
+
     def main_loop(self):
         while True:
             self.clear_screen()
@@ -385,9 +393,10 @@ class Orchestrator:
             print("9. Load Dump & Visualize")
             print("10. Export Data Dump") 
             print("11. Clean Up Context (Reset)")
-            print("12. Exit")
+            print("12. Text-to-Cypher Interface")
+            print("13. Exit")
             
-            choice = input(f"\n{CYAN}Select Option [1-12]: {RESET}").strip()
+            choice = input(f"\n{CYAN}Select Option [1-13]: {RESET}").strip()
             
             if choice == '1':
                 self.run_intent_agent()
@@ -416,6 +425,8 @@ class Orchestrator:
             elif choice == '11':
                  self.run_cleanup_context()
             elif choice == '12':
+                 self.run_text_to_cypher()
+            elif choice == '13':
                  print(f"\n{GREEN}Goodbye!{RESET}")
                  sys.exit(0)
             else:

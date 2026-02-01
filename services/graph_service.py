@@ -62,6 +62,74 @@ class GraphService:
              print(f"{RED}Import failed: {e}{RESET}")
              return False
 
+    def get_schema_visualization(self):
+        """
+        Retrieves the meta-graph schema using APOC and transforms it into 
+        a simplified JSON structure for LLM consumption.
+        """
+        if not self.connect(): return None
+        
+        query = "CALL apoc.meta.graph"
+        try:
+            # apoc.meta.graph returns a set of nodes and relationships that represent the schema
+            # We need to extract the labels/types and properties from this result.
+            # However, apoc.meta.graph returns actual graph objects (nodes/rels).
+            # A easier way for LLM might be apoc.meta.schema, but let's stick to the prompt.
+            # Actually, standard apoc.meta.graph returns:
+            # nodes: [list of nodes representing labels], relationships: [list of relationships]
+            
+            # Let's try apoc.meta.schema or apoc.meta.data for easier parsing if available,
+            # but usually meta.graph is standard.
+            
+            # Alternative: Construct a JSON manually from `CALL apoc.meta.schema()` if available
+            # or simply use the provided query in standard prompt suggestions.
+            
+            # Let's stick to a robust manual query that mimics meta-graph but returns JSON directly
+            # or just use the apoc.meta.graph and parse it.
+            
+            # Simplest for LLM:
+            schema_query = """
+            CALL apoc.meta.schema() YIELD value
+            RETURN value
+            """
+            # If apoc.meta.schema is not available/complex, let's use:
+            # CALL apoc.meta.data()
+            
+            # Let's implement a robust custom schema query that is purely Cypher if APOC is tricky,
+            # BUT the user asked for APOC.
+            
+            # Using apoc.meta.graph involves parsing the graph result which is complex in python driver
+            # (receiving Node/Relationship objects).
+            # `apoc.meta.data` yields a table.
+            
+            # Let's use `apoc.meta.schema` as it returns a nice map.
+            res = self.send_query(schema_query)
+            if res and 'value' in res[0]:
+                return res[0]['value']
+                
+            # Fallback if that returns empty (sometimes happens)
+            return self.send_query("CALL apoc.meta.data()")
+            
+        except Exception as e:
+            print(f"{RED}Schema Extraction Failed: {e}{RESET}")
+            return None
+
+    def validate_cypher(self, cypher):
+        """
+        Validates Cypher syntax using EXPLAIN.
+        Returns (is_valid, error_message).
+        """
+        if not self.connect(): return False, "No Connection"
+        
+        try:
+            with self.driver.session() as session:
+                # EXPLAIN query prevents execution but checks syntax
+                session.run(f"EXPLAIN {cypher}")
+                return True, None
+        except Exception as e:
+            return False, str(e)
+
+
     def send_query(self, cypher, params=None):
         """Execute a Cypher query and return results as a list of dicts."""
         if not self.connect():

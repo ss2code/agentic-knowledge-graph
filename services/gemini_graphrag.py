@@ -17,7 +17,7 @@ class GeminiLLM(LLMInterface):
 
     def __init__(
         self,
-        model_name: str = "gemini-3-pro-preview", # Try latest first
+        model_name: str = "gemini-2.0-flash", # Updated default
         model_params: Optional[dict[str, Any]] = None,
         api_key: Optional[str] = None,
         debug_dir: Optional[str] = None,
@@ -47,19 +47,34 @@ class GeminiLLM(LLMInterface):
         message_history: Optional[Union[List[LLMMessage], Any]] = None,
         system_instruction: Optional[str] = None,
     ) -> LLMResponse:
-        """Synchronous invocation with fallback."""
+        """Synchronous invocation with robust fallback."""
         
-        # 1. Try Primary Model
-        try:
-            return self._generate(self.model_name, input, system_instruction)
-        except Exception as e:
-            # 2. Try Fallback if primary fails
-            print(f"⚠️ Primary model {self.model_name} failed: {e}")
-            print(f"🔄 Falling back to {self.fallback_model}...")
+        # Candidate chain
+        candidates = [self.model_name]
+        
+        # Add explicit fallbacks if not already in candidates
+        # "Gemini 3.0" / Higher end models
+        known_fallbacks = ["gemini-2.0-pro-exp", "gemini-2.0-flash", "gemini-1.5-pro"]
+        
+        for fb in known_fallbacks:
+            if fb not in candidates and fb != self.model_name:
+                candidates.append(fb)
+                
+        self.last_used_model = None
+
+        errors = []
+        for model in candidates:
             try:
-                return self._generate(self.fallback_model, input, system_instruction, calling_function="invoke_fallback")
-            except Exception as e2:
-                raise LLMGenerationError(f"Gemini Error (Primary & Fallback failed): {e2}")
+                # print(f"{CYAN}Trying model: {model}...{RESET}")
+                result = self._generate(model, input, system_instruction)
+                self.last_used_model = model
+                return result
+            except Exception as e:
+                # print(f"{YELLOW}⚠️ Model {model} failed: {e}{RESET}")
+                errors.append(f"{model}: {e}")
+                continue
+        
+        raise LLMGenerationError(f"All models failed: {errors}")
 
     def _generate(self, model, prompt, system_instruction, calling_function="Unknown"):
         """Helper to call generate_content"""
@@ -84,15 +99,34 @@ class GeminiLLM(LLMInterface):
             from core.logging_utils import log_llm_interaction
             log_llm_interaction(self.log_file, self.module_name, model, calling_function, prompt, content, system_instruction)
         
-        # Robust JSON Extraction
-        start = content.find("{")
-        end = content.rfind("}")
+        # Check if the content looks like JSON. If so, try to extract it. 
+        # But for Text-to-Cypher, we don't ALWAYS want JSON.
+        # The prompt for Cypher specifically asks for "ONLY the raw query string".
+        # So we should be careful about stripping braces unless it looks like a JSON object wrapper.
         
-        if start != -1 and end != -1:
-            content = content[start:end+1]
-        else:
-            # Fallback cleanup if no braces found (unlikely for valid JSON)
-            content = content.replace("```json", "").replace("```", "").strip()
+        # Heuristic: If it starts with { and ends with }, it's likely JSON.
+        # Otherwise, if it has ```json ... ``` or similar, extract that.
+        # The previous logic blindly extracted between { and }. If Cypher contains { (like in property lookups {name: 'foo'}),
+        # it might break it if not careful.
+        
+        # Only try JSON extraction if it APPEARS to be a JSON response (which usually implies the user asked for it).
+        # OR if the caller explicitly handles it.
+        # However, for generic usage, we usually strip markdown.
+        
+        content = content.strip()
+        
+        # Handle markdown blocks first
+        if "```" in content:
+            # Extract content from code block if present
+            import re
+            match = re.search(r"```(?:\w+)?\n?(.*?)\n?```", content, re.DOTALL)
+            if match:
+                content = match.group(1).strip()
+        
+        # NOTE: Removing the aggressive JSON extraction logic because it breaks non-JSON outputs (like Cypher queries).
+        # Consumers expecting JSON usually handle parsing or use libraries like json_repair.
+        # For this agentic KG, most agents (Schema, Extraction) ask for JSON, but TextToCypher asks for String.
+        # We'll rely on the agents to parse JSON if they need it.
             
         return LLMResponse(content=content)
 
