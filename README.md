@@ -64,6 +64,32 @@ We recommend organizing your data into "Context" directories. A Context director
 
 The application will **automatically create** `neo4j_home` and `output` if they don't exist. You only need to create the `user_data` folder and drop your files in it.
 
+## 🧠 Orchestrator Structure
+
+The **Orchestrator** (`orchestrator.py`) acts as the central nervous system of the application, coordinating agents and services to transform raw data into a Knowledge Graph.
+
+**Core Responsibilities:**
+*   **Context Management**: Ensures data isolation by managing project-specific directories (`user_data`, `neo4j_home`, `output`).
+*   **State Management**: Tracks the project lifecycle using `StateManager`, ensuring step-by-step execution intent -> schema -> extraction -> build.
+*   **Agent Coordination**: Sequentially invokes specialized agents (Intent, Schema, Extraction, Graph Builder, Visualizer).
+*   **Infrastructure Control**: Automatically spins up and manages Neo4j Docker containers for each context.
+
+**Usage Summary & Workflow Options:**
+Run `python3 orchestrator.py` to enter the interactive main loop. The options guide you through the lifecycle:
+
+1.  **Define Intent**: Interactive interview with the `IntentAgent` to establish your goals and domain.
+2.  **Review Contract**: helper to view the generated `user_intent.json`.
+3.  **Approve Files**: Scans `user_data/`, lists found files, and locks them for processing.
+4.  **Negotiate Schema**: `SchemaRefinementLoop` iteratively designs the Graph Schema (Nodes/Relationships).
+5.  **Design Extraction Logic**: `ExtractionSchemaLoop` generates the mapping plan from raw files -> Schema.
+6.  **Build/Refresh Graph**: `GraphBuilderAgent` executes the extraction and populates Neo4j.
+7.  **Run Knowledge Discovery**: Runs GraphRAG pipeline on unstructured text (MD/TXT) to finding entities/connections.
+8.  **Inspect Graph Stats**: Quick check of node counts and recent entries in the DB.
+9.  **Load Dump & Visualize**: Loads an exported `.graphml` into Neo4j and launches the web visualizer.
+10. **Export Data Dump**: Snapshots the current database to a `.graphml` file in `output/`.
+11. **Clean Up Context**: Dangerous reset – deletes the DB container and generated config files.
+12. **Text-to-Cypher Interface**: Chat with your data using natural language queries.
+
 ## 🛠 CLI Commands
 
 You can automate tasks using the CLI mode:
