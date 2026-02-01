@@ -28,7 +28,7 @@ class TestQuotaHandling(unittest.TestCase):
         result = agent._generate("prompt")
         
         # Verify
-        self.assertEqual(result, "Success")
+        self.assertEqual(result, ("Success", "gemini-3-pro-preview"))
         self.assertEqual(mock_sleep.call_count, 2)
         
         # Verify sleep duration (5.5 + 1 = 6.5s)

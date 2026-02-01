@@ -32,7 +32,7 @@ class Orchestrator:
     def __init__(self, context: Context, cli_mode=False):
         self.context = context
         self.cli_mode = cli_mode
-        self.sm = StateManager() 
+        self.sm = StateManager(base_path=self.context.base_path) 
         self.container_svc = ContainerService(context)
         self.api_key = self._setup_api_key()
         

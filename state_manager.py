@@ -6,13 +6,16 @@ STATE_FILE = 'data/system_state.json'
 INTENT_FILE = 'data/user_intent.json'
 
 class StateManager:
-    def __init__(self):
+    def __init__(self, base_path='data'):
+        self.base_path = base_path
+        self.state_file = os.path.join(base_path, 'system_state.json')
+        self.intent_file = os.path.join(base_path, 'user_intent.json')
         self.state = self.load_state()
 
     def load_state(self):
-        if os.path.exists(STATE_FILE):
+        if os.path.exists(self.state_file):
             try:
-                with open(STATE_FILE, 'r') as f:
+                with open(self.state_file, 'r') as f:
                     return json.load(f)
             except json.JSONDecodeError:
                 pass
@@ -28,8 +31,8 @@ class StateManager:
 
     def save_state(self):
         self.state["last_updated"] = str(datetime.datetime.now())
-        os.makedirs('data', exist_ok=True)
-        with open(STATE_FILE, 'w') as f:
+        os.makedirs(self.base_path, exist_ok=True)
+        with open(self.state_file, 'w') as f:
             json.dump(self.state, f, indent=2)
 
     def mark_intent_updated(self):
@@ -65,9 +68,9 @@ class StateManager:
         self.save_state()
 
     def get_current_intent(self):
-        if os.path.exists(INTENT_FILE):
+        if os.path.exists(self.intent_file):
             try:
-                with open(INTENT_FILE, 'r') as f:
+                with open(self.intent_file, 'r') as f:
                     return json.load(f)
             except Exception as e:
                 print(f"Error reading intent file: {e}")
@@ -75,7 +78,7 @@ class StateManager:
         return None
 
     def get_current_schema(self):
-        schema_path = 'data/construction_plan.json'
+        schema_path = os.path.join(self.base_path, 'construction_plan.json')
         if os.path.exists(schema_path):
             try:
                 with open(schema_path, 'r') as f:

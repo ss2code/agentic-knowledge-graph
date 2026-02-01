@@ -39,6 +39,11 @@ class TestE2EPipeline(unittest.TestCase):
         # 3. Create Context Dirs
         cls.ctx = Context(name=TEST_CONTEXT_NAME, base_path=TEST_BASE_PATH)
         cls.ctx.ensure_directories()
+
+        # Re-connect graphdb with new env vars
+        graphdb.close()
+        graphdb.__init__()
+
         
         # 4. Copy Canned Data to User Data
         src_data = os.path.join(os.getcwd(), CANNED_DATA_DIR, 'user_data')
@@ -67,41 +72,36 @@ class TestE2EPipeline(unittest.TestCase):
             # or patch subprocess.run. 
             
             # Let's try patching subprocess.run ONLY when calling docker run
-            with patch('subprocess.run') as mock_run:
-                # We essentially re-implement logic or use a Side Effect?
-                # Too complex. 
-                # Simplest: Stop the main container if running? No disruptive.
-                
-                # We will redefine the command in the class instance? No, it's method local.
-                # We will just implement the Docker Start logic directly here for the test.
-                
-                print("[E2E] Starting Test Container on 7475/7688...")
-                # Stop if exists
-                cls.app.container_svc.stop_container()
-                
-                import_vol = os.path.abspath(cls.ctx.data_dir)
-                data_vol = os.path.abspath(os.path.join(cls.ctx.neo4j_home, 'data'))
-                logs_vol = os.path.abspath(os.path.join(cls.ctx.neo4j_home, 'logs'))
-                
-                cmd = [
-                    "docker", "run", "-d",
-                    "--name", cls.app.container_svc.container_name,
-                    "-p", "7475:7474", "-p", "7688:7687", # Test Ports
-                    "-e", "NEO4J_AUTH=neo4j/password",
-                    "-e", "NEO4J_PLUGINS=[\"apoc\"]",
-                    "-e", "NEO4J_apoc_export_file_enabled=true",
-                    "-e", "NEO4J_apoc_import_file_enabled=true",
-                    "-e", "NEO4J_apoc_import_file_use__neo4j__config=true",
-                    "-e", "NEO4J_dbms_security_procedures_unrestricted=apoc.*",
-                    "-v", f"{import_vol}:/var/lib/neo4j/import",
-                    "-v", f"{data_vol}:/data",
-                    "-v", f"{logs_vol}:/logs",
-                    "neo4j:latest"
-                ]
-                import subprocess
-                subprocess.run(cmd, check=True)
-                cls.app.container_svc.wait_for_healthy()
-                return True
+            # REMOVED PATCH to allow real execution
+            # with patch('subprocess.run') as mock_run:
+            
+            print("[E2E] Starting Test Container on 7475/7688...")
+            # Stop if exists
+            cls.app.container_svc.stop_container()
+            
+            import_vol = os.path.abspath(cls.ctx.data_dir)
+            data_vol = os.path.abspath(os.path.join(cls.ctx.neo4j_home, 'data'))
+            logs_vol = os.path.abspath(os.path.join(cls.ctx.neo4j_home, 'logs'))
+            
+            cmd = [
+                "docker", "run", "-d",
+                "--name", cls.app.container_svc.container_name,
+                "-p", "7475:7474", "-p", "7688:7687", # Test Ports
+                "-e", "NEO4J_AUTH=neo4j/password",
+                "-e", "NEO4J_PLUGINS=[\"apoc\"]",
+                "-e", "NEO4J_apoc_export_file_enabled=true",
+                "-e", "NEO4J_apoc_import_file_enabled=true",
+                "-e", "NEO4J_apoc_import_file_use__neo4j__config=true",
+                "-e", "NEO4J_dbms_security_procedures_unrestricted=apoc.*",
+                "-v", f"{import_vol}:/var/lib/neo4j/import",
+                "-v", f"{data_vol}:/data",
+                "-v", f"{logs_vol}:/logs",
+                "neo4j:latest"
+            ]
+            import subprocess
+            subprocess.run(cmd, check=True)
+            cls.app.container_svc.wait_for_healthy()
+            return True
 
         # Replaces binding
         cls.app.container_svc.start_container = mock_start_container

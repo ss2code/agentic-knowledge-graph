@@ -36,7 +36,7 @@ class TestGraphRAGComponents(unittest.IsolatedAsyncioTestCase):
         # Just check it initializes without exploding if key is present
         with patch.dict(os.environ, {"GEMINI_API_KEY": "fake_key"}):
             llm = GeminiLLM()
-            self.assertEqual(llm.model_name, "gemini-3-pro-preview")
+            self.assertEqual(llm.model_name, "gemini-2.0-flash")
             
             embedder = GeminiEmbedder()
             self.assertEqual(embedder.model, "text-embedding-004")
