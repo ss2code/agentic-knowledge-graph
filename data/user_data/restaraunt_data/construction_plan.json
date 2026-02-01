@@ -1,0 +1,124 @@
+{
+  "Product": {
+    "construction_type": "node",
+    "source_file": "products.csv",
+    "label": "Product",
+    "unique_column_name": "id",
+    "properties": [
+      "id",
+      "name"
+    ]
+  },
+  "ProductCategory": {
+    "construction_type": "node",
+    "source_file": "products.csv",
+    "label": "ProductCategory",
+    "unique_column_name": "category",
+    "properties": [
+      "category"
+    ]
+  },
+  "Ingredient": {
+    "construction_type": "node",
+    "source_file": "products.csv",
+    "label": "Ingredient",
+    "unique_column_name": "ingredients",
+    "properties": [
+      "name"
+    ],
+    "rule": "Split the 'ingredients' column by comma separator, trim whitespace, and create a unique node for each distinct ingredient."
+  },
+  "CustomerReview": {
+    "construction_type": "node",
+    "source_file": "reviews.txt",
+    "label": "CustomerReview",
+    "unique_column_name": "review_id",
+    "properties": [
+      "review_id",
+      "body",
+      "sentiment_score"
+    ],
+    "rule": "Generate a unique hash/UUID for 'review_id'. Store the full text row as 'body'. Calculate 'sentiment_score' (float -1.0 to 1.0) using NLP and store it directly as a property."
+  },
+  "Sentiment": {
+    "construction_type": "node",
+    "source_file": "reviews.txt",
+    "label": "Sentiment",
+    "unique_column_name": "sentiment_label",
+    "properties": [
+      "label"
+    ],
+    "rule": "Derive categorical sentiment (Positive, Neutral, Negative) from the review text using NLP."
+  },
+  "CustomerExperience": {
+    "construction_type": "node",
+    "source_file": "reviews.txt",
+    "label": "CustomerExperience",
+    "unique_column_name": "experience_phrase",
+    "properties": [
+      "phrase",
+      "complaint_type"
+    ],
+    "rule": "Extract key phrases describing the root cause or experience (e.g., 'soggy lettuce', 'slow service') using NLP keyword extraction."
+  },
+  "BELONGS_TO": {
+    "construction_type": "relationship",
+    "source_file": "products.csv",
+    "relationship_type": "BELONGS_TO",
+    "from_node_label": "Product",
+    "from_node_column": "id",
+    "to_node_label": "ProductCategory",
+    "to_node_column": "category"
+  },
+  "CONTAINS_INGREDIENT": {
+    "construction_type": "relationship",
+    "source_file": "products.csv",
+    "relationship_type": "CONTAINS_INGREDIENT",
+    "from_node_label": "Product",
+    "from_node_column": "id",
+    "to_node_label": "Ingredient",
+    "to_node_column": "ingredients",
+    "rule": "Iterate through the split values of the 'ingredients' column to link the Product to each specific Ingredient node."
+  },
+  "MENTIONS_PRODUCT": {
+    "construction_type": "relationship",
+    "source_file": "reviews.txt",
+    "relationship_type": "MENTIONS_PRODUCT",
+    "from_node_label": "CustomerReview",
+    "from_node_column": "review_id",
+    "to_node_label": "Product",
+    "to_node_column": "name",
+    "rule": "Use NLP Named Entity Recognition (NER) to find Product names in review text and link to the Product node."
+  },
+  "HAS_SENTIMENT": {
+    "construction_type": "relationship",
+    "source_file": "reviews.txt",
+    "relationship_type": "HAS_SENTIMENT",
+    "from_node_label": "CustomerReview",
+    "from_node_column": "review_id",
+    "to_node_label": "Sentiment",
+    "to_node_column": "sentiment_label",
+    "rule": "Link the review to the derived categorical Sentiment node."
+  },
+  "REPORTED_EXPERIENCE": {
+    "construction_type": "relationship",
+    "source_file": "reviews.txt",
+    "relationship_type": "REPORTED_EXPERIENCE",
+    "from_node_label": "CustomerReview",
+    "from_node_column": "review_id",
+    "to_node_label": "CustomerExperience",
+    "to_node_column": "experience_phrase",
+    "rule": "Link the review to the extracted experience/complaint phrase."
+  },
+  "RELATED_TO_INGREDIENT": {
+    "construction_type": "relationship",
+    "source_file": "reviews.txt",
+    "relationship_type": "RELATED_TO_INGREDIENT",
+    "from_node_label": "CustomerExperience",
+    "from_node_column": "experience_phrase",
+    "to_node_label": "Ingredient",
+    "to_node_column": "name",
+    "rule": "Use NLP dependency parsing to link specific complaints (e.g., 'soggy') to the ingredient mentioned in the context (e.g., 'Lettuce')."
+  },
+  "reasoning": "The schema normalizes product data by splitting 'ingredients' into distinct nodes to allow for granular root cause analysis (e.g., identifying if 'Cheese' is a recurring issue across multiple pizzas). The 'CustomerReview' node directly captures the 'sentiment_score' property as requested, while a separate 'Sentiment' node allows for categorical grouping (Positive/Negative). NLP-driven relationships connect unstructured reviews to structured product and ingredient data to fulfill the RCA intent."
+}

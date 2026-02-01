@@ -1,0 +1,8 @@
+{
+  "entities": [
+    "Product",
+    "Issue"
+  ],
+  "facts": [],
+  "model_used": "mock-model"
+}

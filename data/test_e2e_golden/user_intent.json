@@ -1,0 +1,1 @@
+{"intent": "Trace Supply Chain", "description": "Map ingredients to products to identify issues.", "primary_entities": ["Product", "Ingredient", "Supplier"], "reasoning": "E2E Test Intent"}

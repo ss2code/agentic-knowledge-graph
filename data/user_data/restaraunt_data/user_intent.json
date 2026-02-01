@@ -1,0 +1,6 @@
+{
+  "intent": "Root Cause Analysis of Customer Complaints Related to Products and Categories",
+  "description": "Identify the root causes of customer complaints related to specific ingredients, products, and product categories by analyzing customer reviews, sentiments, and experiences, and connecting them to product information.",
+  "primary_entities": ["CustomerComplaint", "Ingredient", "Product", "ProductCategory", "CustomerReview", "Sentiment", "CustomerExperience"],
+  "reasoning": "This is a good knowledge graph use case because it involves connecting various entities (complaints, ingredients, products, categories, reviews, sentiments, and experiences) to understand complex relationships and trace the origin of customer issues. The goal is specific and actionable."
+}
