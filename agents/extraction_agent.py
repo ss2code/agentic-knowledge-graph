@@ -218,8 +218,10 @@ class ExtractionSchemaLoop:
         
         # Notify about logging
         if os.path.exists(self.debug_dir):
-            print(f"{CYAN}📝 Logging NER to: {os.path.join(self.debug_dir, 'debug_llm_NERAgent.md')}{RESET}")
-            print(f"{CYAN}📝 Logging Facts to: {os.path.join(self.debug_dir, 'debug_llm_FactExtractionAgent.md')}{RESET}")
+            if self.ner_agent.log_file:
+                 print(f"{CYAN}📝 Logging NER to: {self.ner_agent.log_file}{RESET}")
+            if self.fact_agent.log_file:
+                 print(f"{CYAN}📝 Logging Facts to: {self.fact_agent.log_file}{RESET}")
         
         try:
             intent, file_summaries, construction_plan = self.load_context()

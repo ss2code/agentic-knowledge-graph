@@ -26,9 +26,9 @@ class TextToCypherAgent:
             self.debug_dir = "debug"
             os.makedirs(self.debug_dir, exist_ok=True)
             
-        # Rotate logs
-        from core.logging_utils import rotate_logs
-        rotate_logs(self.debug_dir)
+        # Rotation handled automatically by BaseAgent / Logging utils rotation rules
+        # from core.logging_utils import rotate_logs
+        # rotate_logs(self.debug_dir)
         
         # Standardize log file name
         self.debug_log_path = os.path.join(self.debug_dir, "debug_llm_TextToCypherAgent.md")

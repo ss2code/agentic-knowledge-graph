@@ -39,9 +39,10 @@ class Orchestrator:
         self.context.ensure_directories()
         
         # Rotate logs on startup
-        from core.logging_utils import rotate_logs
-        if os.path.exists(self.context.debug_dir):
-            rotate_logs(self.context.debug_dir)
+        # Rotation handled on module initialization
+        # from core.logging_utils import rotate_logs
+        # if os.path.exists(self.context.debug_dir):
+        #    rotate_logs(self.context.debug_dir)
         
         if not self.container_svc.is_running():
             print(f"{YELLOW}Neo4j is not running for this context. Starting...{RESET}")
