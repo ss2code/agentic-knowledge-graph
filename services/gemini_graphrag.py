@@ -149,7 +149,7 @@ class GeminiLLM(LLMInterface):
 class GeminiEmbedder(Embedder):
     """Adapter for Google Gemini Embeddings."""
     
-    def __init__(self, model: str = "text-embedding-004", api_key: Optional[str] = None):
+    def __init__(self, model: str = "models/gemini-embedding-001", api_key: Optional[str] = None):
         super().__init__()
         self.model = model
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")

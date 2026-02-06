@@ -195,7 +195,8 @@ Cypher: MATCH (o:Organization) RETURN o.name LIMIT 5
         
         # Log Execution Results
         try:
-             result_str = f"Count: {len(results)}\nSample: {json.dumps(results[:5], default=str)}" if isinstance(results, list) else str(results)
+             # User requested log ALL results (not sampled)
+             result_str = json.dumps(results, indent=2, default=str) if isinstance(results, list) else str(results)
              with open(self.debug_log_path, "a") as f:
                  f.write(f"**Execution Results:**\n```json\n{result_str}\n```\n\n---\n")
         except Exception as e:
@@ -207,6 +208,16 @@ Cypher: MATCH (o:Organization) RETURN o.name LIMIT 5
         print(f"\n{CYAN}--- 💬 Text-to-Cypher Interface ---{RESET}")
         print("Type your question below. Type 'exit' to return to menu.")
         
+        # Start afresh for every run (Delete previous log)
+        if os.path.exists(self.debug_log_path):
+            try:
+                os.remove(self.debug_log_path)
+                # Re-initialize header
+                with open(self.debug_log_path, "w") as f:
+                    f.write("# Text-to-Cypher Debug Log (Run Fresh)\n\n")
+            except OSError as e:
+                print(f"{YELLOW}Could not clear log file: {e}{RESET}")
+
         # Pre-fetch schema
         self.get_schema()
         
@@ -227,10 +238,8 @@ Cypher: MATCH (o:Organization) RETURN o.name LIMIT 5
                     
                     if results:
                         print(f"\n{GREEN}Results ({len(results)}):{RESET}")
-                        # Pretty print first few
-                        print(json.dumps(results[:5], indent=2, default=str))
-                        if len(results) > 5:
-                            print(f"... and {len(results)-5} more.")
+                        # Display ALL results
+                        print(json.dumps(results, indent=2, default=str))
                     elif results is not None: # Empty list
                         print(f"{YELLOW}No results found.{RESET}")
                 else:

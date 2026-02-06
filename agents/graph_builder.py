@@ -100,7 +100,8 @@ class GraphBuilderAgent(BaseAgent):
             return base
 
     def _generate_llm_query(self, task_desc, context_json):
-        print(f"{CYAN}🤖 Generating Cypher via LLM...{RESET}")
+        print(f"{CYAN}🤖 Generating Cypher via LLM...", end="", flush=True) 
+        start_time = time.time()
         prompt = f"""
         You are a Neo4j Cypher Expert.
         
@@ -117,6 +118,9 @@ class GraphBuilderAgent(BaseAgent):
         """
         response, _ = self._generate(prompt, function_name="generate_cypher")
         
+        duration = time.time() - start_time
+        print(f" Done ({duration:.1f}s){RESET}")
+        
         # Clean response
         if "```" in response:
             import re
@@ -127,7 +131,8 @@ class GraphBuilderAgent(BaseAgent):
     def import_nodes(self, nodes):
         self.log_step("Node Import", "Starting node batch import...")
         
-        for node in nodes:
+        total = len(nodes)
+        for i, node in enumerate(nodes):
             label = node['label']
             source_file = node.get('source_file')
             if not source_file: continue
@@ -136,8 +141,12 @@ class GraphBuilderAgent(BaseAgent):
             # 1. Heuristic
             hq = self._get_heuristic_node_query(node, filename)
             
-            print(f"\n{YELLOW}Node: {label} (File: {filename}){RESET}")
-            choice = input(f"{CYAN}Import Strategy? [H]euristic (Default) / [L]LM / [C]ompare: {RESET}").strip().upper()
+            if self.global_strategy in ['H', 'L']:
+                 choice = self.global_strategy
+                 print(f"{YELLOW}[{i+1}/{total}] Node: {label} (File: {filename}) -> Auto-selecting {choice}{RESET}")
+            else:
+                print(f"\n{YELLOW}[{i+1}/{total}] Node: {label} (File: {filename}){RESET}")
+                choice = input(f"{CYAN}Import Strategy? [H]euristic (Default) / [L]LM / [C]ompare: {RESET}").strip().upper()
             
             final_query = hq
             
@@ -157,9 +166,10 @@ class GraphBuilderAgent(BaseAgent):
         self.log_step("Relationship Import", "Starting relationship import...")
         node_map = {n['label']: n for n in nodes}
         
-        for rel in relationships:
+        total = len(relationships)
+        for i, rel in enumerate(relationships):
             rel_type = rel.get('relationship_type', rel.get('type'))
-            print(f"\n{YELLOW}Relationship: {rel_type}{RESET}")
+            print(f"\n{YELLOW}[{i+1}/{total}] Relationship: {rel_type}{RESET}")
             
             # Logic to find source file... (simplified for brevity, assume extraction from rel or source node)
             source_label = rel.get('from_node_label')
@@ -177,9 +187,6 @@ class GraphBuilderAgent(BaseAgent):
             MATCH (target:{rel.get('to_node_label')} {{ id: row['target_id'] }}) -- Simplified
             MERGE (source)-[r:{rel_type}]->(target)
             """
-            # NOTE: Heuristic above is very generic and likely wrong for complex cases. 
-            # Reusing original logic would be better but it was also generic.
-            # Let's use the LLM to fix this usually!
             
             # Quick check for original heuristic logic re-implementation
             source_key = rel.get('from_node_column', 'id')
@@ -193,7 +200,12 @@ class GraphBuilderAgent(BaseAgent):
             MERGE (source)-[r:{rel_type}]->(target)
             """
 
-            choice = input(f"{CYAN}Import Strategy? [H]euristic / [L]LM / [C]ompare: {RESET}").strip().upper()
+            if self.global_strategy in ['H', 'L']:
+                 choice = self.global_strategy
+                 print(f" -> Auto-selecting {choice}")
+            else:
+                choice = input(f"{CYAN}Import Strategy? [H]euristic / [L]LM / [C]ompare: {RESET}").strip().upper()
+                
             final_query = hq
             
             if choice == 'L' or choice == 'C':
@@ -246,6 +258,17 @@ class GraphBuilderAgent(BaseAgent):
                      if ctype == 'node': nodes.append(rule)
                      elif ctype == 'relationship': rels.append(rule)
         
+        # Ask for global strategy
+        print(f"\n{CYAN}Select Global Import Strategy:{RESET}")
+        print(" [H]euristic (Apply to all) - Default")
+        print(" [L]LM (Apply to all)")
+        print(" [I]nteractive (Ask for each - Compare/Select)")
+        choice = input(f"{CYAN}Choice [H/L/I]: {RESET}").strip().upper()
+        if choice not in ['H', 'L', 'I']:
+            choice = 'H' # Default
+        self.global_strategy = choice
+        print(f"{GREEN}Selected Strategy: {self.global_strategy}{RESET}\n")
+
         self.create_constraints(nodes)
         self.import_nodes(nodes)
         self.import_relationships(nodes, rels)
