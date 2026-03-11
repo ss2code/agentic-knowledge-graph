@@ -188,28 +188,56 @@ with st.container(border=True):
     col1.subheader("② Data Ingestion")
     col2.caption("")
 
-    if approved := load_artifact(ctx.base_path, "approved_files.json"):
-        files_list = approved.get("files", [])
-        st.write(f"**{len(files_list)} approved file(s):**")
-        for f in files_list:
-            st.text(os.path.basename(f))
+    # --- Directory selector ---
+    default_scan_dir = ctx.data_dir
+    scan_dir = st.text_input(
+        "Directory to scan",
+        value=default_scan_dir,
+        key="ingest_scan_dir",
+        help="Absolute or relative path containing CSV, MD, or TXT files",
+    )
 
-    user_data_files = []
-    if os.path.isdir(ctx.data_dir):
-        user_data_files = [f for f in os.listdir(ctx.data_dir) if not f.startswith(".")]
+    # Discover supported files in the chosen directory
+    SUPPORTED_EXT = {".csv", ".md", ".txt", ".json"}
+    discovered = []
+    scan_dir_abs = os.path.abspath(scan_dir) if scan_dir else ""
+    if scan_dir_abs and os.path.isdir(scan_dir_abs):
+        discovered = sorted(
+            f for f in os.listdir(scan_dir_abs)
+            if not f.startswith(".")
+            and os.path.splitext(f)[1].lower() in SUPPORTED_EXT
+        )
 
-    st.write(f"Files in `user_data/`: {len(user_data_files)}")
-    for f in user_data_files:
-        st.text(f)
+    # --- File multiselect (explicit user choice required) ---
+    selected_files = st.multiselect(
+        f"Select files to approve ({len(discovered)} found)",
+        options=discovered,
+        default=[],
+        key="ingest_selected_files",
+        placeholder="Choose files…" if discovered else "No supported files found in directory",
+    )
 
-    if st.button("✅ Approve All Files", key="approve_files"):
+    selected_paths = [os.path.join(scan_dir_abs, f) for f in selected_files]
+
+    # --- Approve button (active only when files are selected) ---
+    approve_disabled = len(selected_paths) == 0
+    btn_label = "Approve Selected Files" if approve_disabled else f"✅ Approve {len(selected_paths)} File(s)"
+    if st.button(btn_label, key="approve_files", disabled=approve_disabled, type="primary"):
         try:
-            with st.spinner("Approving files..."):
-                paths = make_runner(ctx).approve_files()
-            st.success(f"Approved {len(paths)} file(s).")
+            with st.spinner("Saving approval..."):
+                make_runner(ctx).approve_files(selected_paths=selected_paths)
             st.rerun()
         except Exception as e:
             st.error(f"File approval failed: {e}")
+
+    # --- Compact approved-files display ---
+    if approved := load_artifact(ctx.base_path, "approved_files.json"):
+        approved_list = approved.get("files", [])
+        if approved_list:
+            st.success(
+                f"**{len(approved_list)} approved:** "
+                + "  ·  ".join(os.path.basename(p) for p in approved_list)
+            )
 
 # ---------------------------------------------------------------------------
 # Step 3 — Schema Design

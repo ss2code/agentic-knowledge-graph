@@ -48,18 +48,24 @@ class PipelineRunner:
     # Stage 2 – File approval
     # ------------------------------------------------------------------
 
-    def approve_files(self) -> list:
+    def approve_files(self, selected_paths: list | None = None) -> list:
         """
-        Scan context.data_dir for non-hidden files, persist approved_files.json,
-        mark files as approved, and return the list of approved absolute paths.
-        """
-        data_dir = self.context.data_dir
-        if os.path.isdir(data_dir):
-            files = [f for f in os.listdir(data_dir) if not f.startswith('.')]
-        else:
-            files = []
+        Persist approved_files.json and mark files as approved.
 
-        approved_paths = [os.path.join(data_dir, f) for f in files]
+        If selected_paths is given, use it directly (absolute paths).
+        Otherwise fall back to scanning context.data_dir for non-hidden files.
+        Returns the list of approved absolute paths.
+        """
+        if selected_paths is not None:
+            approved_paths = selected_paths
+        else:
+            data_dir = self.context.data_dir
+            if os.path.isdir(data_dir):
+                files = [f for f in os.listdir(data_dir) if not f.startswith('.')]
+            else:
+                files = []
+            approved_paths = [os.path.join(data_dir, f) for f in files]
+
         approved_data = {"files": approved_paths}
 
         save_path = os.path.join(self.context.base_path, 'approved_files.json')
