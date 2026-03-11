@@ -10,13 +10,14 @@ class GraphBuilderAgent(BaseAgent):
     based on the Construction Plan.
     Now supports Interactive Mode (Heuristic vs LLM).
     """
-    def __init__(self, api_key=None, verbose=True, context=None):
+    def __init__(self, api_key=None, verbose=True, context=None, progress_callback=None):
         """
         Initialize the Graph Builder.
         """
-        super().__init__(api_key=api_key, module_name="GraphBuilderAgent") 
+        super().__init__(api_key=api_key, module_name="GraphBuilderAgent")
         self.verbose = verbose
         self.context = context
+        self.progress_callback = progress_callback  # callable(message: str) for live UI updates
         self.data_dir = context.data_dir if context else 'data'
         self.base_dir = context.base_path if context else 'data'
         
@@ -31,19 +32,23 @@ class GraphBuilderAgent(BaseAgent):
              self.log_path = os.path.join('data', 'debug', 'graph_build_log.md')
 
     def log_step(self, step_name, details, status="INFO"):
-        """Logs a step to the markdown file with a timestamp."""
+        """Logs a step to the markdown file with a timestamp.
+        Also fires progress_callback(message) for live UI streaming."""
         timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
         icon = "✅" if status == "SUCCESS" else ("❌" if status == "ERROR" else "ℹ️")
-        
+
         entry = f"\n### {icon} {step_name} ({timestamp})\n```text\n{details}\n```\n"
-        
+
         os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
         with open(self.log_path, 'a') as f:
             f.write(entry)
-            
+
         if self.verbose:
             color = GREEN if status == "SUCCESS" else (RED if status == "ERROR" else CYAN)
             print(f"{color}[{step_name}] {status}{RESET}")
+
+        if self.progress_callback:
+            self.progress_callback(f"{icon} **{step_name}** — {status}\n\n```\n{details}\n```")
 
     def load_construction_plan(self):
         path = os.path.join(self.base_dir, 'construction_plan.json')
@@ -228,17 +233,22 @@ class GraphBuilderAgent(BaseAgent):
         # Log init handled in __init__ now or via logging utils
         pass
 
-    def build_graph(self):
-        # self.init_log() # done via logging utils implicitly when writing
+    def build_graph(self, global_strategy=None):
+        """Build the graph from the construction plan.
+
+        Args:
+            global_strategy: 'H' (heuristic), 'L' (LLM), or 'I' (interactive per-node).
+                             When None, prompts via input() — CLI mode only.
+        """
         print(f"\n{CYAN}--- 🏗️  Starting Graph Construction ---{RESET}")
-        
+
         if not graphdb.connect():
             self.log_step("Connection", "Failed to connect to Neo4j", "ERROR")
             return False
 
         print(f"{YELLOW}🧨 Nuking Database (Clean Slate Policy)...{RESET}")
         graphdb.nuke_database()
-        
+
         try:
             plan = self.load_construction_plan()
         except Exception as e:
@@ -249,23 +259,28 @@ class GraphBuilderAgent(BaseAgent):
         rels = []
         if isinstance(plan, dict):
             if 'nodes' in plan and isinstance(plan['nodes'], list):
-                 nodes = plan['nodes']
-                 rels = plan['relationships']
+                nodes = plan['nodes']
+                rels = plan['relationships']
             else:
-                 for key, rule in plan.items():
-                     if not isinstance(rule, dict): continue
-                     ctype = rule.get('construction_type')
-                     if ctype == 'node': nodes.append(rule)
-                     elif ctype == 'relationship': rels.append(rule)
-        
-        # Ask for global strategy
-        print(f"\n{CYAN}Select Global Import Strategy:{RESET}")
-        print(" [H]euristic (Apply to all) - Default")
-        print(" [L]LM (Apply to all)")
-        print(" [I]nteractive (Ask for each - Compare/Select)")
-        choice = input(f"{CYAN}Choice [H/L/I]: {RESET}").strip().upper()
-        if choice not in ['H', 'L', 'I']:
-            choice = 'H' # Default
+                for key, rule in plan.items():
+                    if not isinstance(rule, dict): continue
+                    ctype = rule.get('construction_type')
+                    if ctype == 'node': nodes.append(rule)
+                    elif ctype == 'relationship': rels.append(rule)
+
+        # Determine import strategy — skip input() if caller provided one
+        if global_strategy is not None:
+            choice = global_strategy.upper()
+            if choice not in ['H', 'L', 'I']:
+                choice = 'H'
+        else:
+            print(f"\n{CYAN}Select Global Import Strategy:{RESET}")
+            print(" [H]euristic (Apply to all) - Default")
+            print(" [L]LM (Apply to all)")
+            print(" [I]nteractive (Ask for each - Compare/Select)")
+            choice = input(f"{CYAN}Choice [H/L/I]: {RESET}").strip().upper()
+            if choice not in ['H', 'L', 'I']:
+                choice = 'H'
         self.global_strategy = choice
         print(f"{GREEN}Selected Strategy: {self.global_strategy}{RESET}\n")
 

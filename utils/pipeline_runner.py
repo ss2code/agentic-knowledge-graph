@@ -149,19 +149,25 @@ class PipelineRunner:
     # Stage 5 – Graph build
     # ------------------------------------------------------------------
 
-    def run_graph_build(self) -> bool:
+    def run_graph_build(self, strategy: str = 'H', progress_callback=None) -> bool:
         """
         Drive the GraphBuilderAgent to populate Neo4j.
-        Marks graph as built on success.
-        Returns True/False.
+
+        Args:
+            strategy: 'H' (heuristic), 'L' (LLM), or 'I' (interactive — CLI only).
+                      Defaults to 'H' so web callers never hit input().
+            progress_callback: optional callable(message: str) invoked after each
+                               log_step for live streaming to the UI.
+        Marks graph as built on success. Returns True/False.
         """
         from agents.graph_builder import GraphBuilderAgent
 
         agent = GraphBuilderAgent(
             api_key=self.api_key,
             context=self.context,
+            progress_callback=progress_callback,
         )
-        success = agent.build_graph()
+        success = agent.build_graph(global_strategy=strategy)
         if success:
             self.sm.mark_graph_built()
         return bool(success)

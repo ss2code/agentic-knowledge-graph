@@ -379,25 +379,48 @@ with st.container(border=True):
     col1.subheader("⑤ Graph Build")
     col2.caption(f"Last run: {get_last_run_time(ctx.debug_dir, 'GraphBuilderAgent') or 'never'}")
 
-    graph_log = load_graph_build_log(ctx.debug_dir)
-    if graph_log:
-        with st.expander("Graph build log"):
-            st.markdown(graph_log)
+    # Strategy selector (no input() on the web)
+    strategy = st.radio(
+        "Import strategy",
+        options=["H — Heuristic (fast, rule-based)", "L — LLM (slower, smarter)"],
+        index=0,
+        horizontal=True,
+        key="graph_build_strategy",
+    )
+    strategy_code = strategy[0]  # 'H' or 'L'
 
-    if st.button("▶ Run Graph Build", key="run_graph_build"):
+    if st.button("▶ Run Graph Build", key="run_graph_build", type="primary"):
         if not get_api_key():
             st.error("Set a Gemini API key in the sidebar first.")
         else:
-            try:
-                with st.spinner("Building graph in Neo4j..."):
-                    success = make_runner(ctx).run_graph_build()
-                if success:
-                    st.success("Graph built successfully.")
-                else:
-                    st.warning("Graph build completed with warnings.")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Graph build failed: {e}")
+            # Live progress container — each log_step fires a callback that writes here
+            with st.status("Building graph…", expanded=True) as build_status:
+                live_log = st.empty()
+                log_lines: list[str] = []
+
+                def _progress(msg: str):
+                    log_lines.append(msg)
+                    live_log.markdown("\n\n---\n\n".join(log_lines))
+
+                try:
+                    success = make_runner(ctx).run_graph_build(
+                        strategy=strategy_code,
+                        progress_callback=_progress,
+                    )
+                    if success:
+                        build_status.update(label="Graph built ✅", state="complete")
+                    else:
+                        build_status.update(label="Build finished with warnings ⚠️", state="error")
+                except Exception as e:
+                    build_status.update(label=f"Build failed ❌", state="error")
+                    st.error(f"Graph build failed: {e}")
+            st.rerun()
+
+    # Persistent build log
+    graph_log = load_graph_build_log(ctx.debug_dir)
+    if graph_log:
+        with st.expander("📋 Graph build log (last run)"):
+            st.markdown(graph_log)
 
     logs = load_llm_logs(ctx.debug_dir, agent_prefix="GraphBuilderAgent")
     with st.expander(f"LLM Log — GraphBuilderAgent ({len(logs)} interactions)"):

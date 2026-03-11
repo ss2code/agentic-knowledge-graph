@@ -62,3 +62,30 @@ class TestGraphBuilderAgent(unittest.TestCase):
 
         self.assertFalse(result)
         mock_graphdb.connect.assert_called_once()
+
+    @patch("agents.graph_builder.graphdb")
+    def test_build_graph_accepts_global_strategy_no_input(self, mock_graphdb):
+        """Regression: build_graph(global_strategy='H') must not call input().
+        This was broken when web UI triggered build_graph() without strategy,
+        causing it to block on input() and stall the Streamlit thread."""
+        mock_graphdb.connect.return_value = False  # short-circuit after connect check
+        builder = self._make_builder()
+
+        # Should not raise and must not call input() — patch builtins.input to detect it
+        with patch("builtins.input", side_effect=AssertionError("input() called in web mode")):
+            result = builder.build_graph(global_strategy="H")
+
+        self.assertFalse(result)  # False because connect() returned False
+
+    @patch("agents.graph_builder.graphdb")
+    def test_build_graph_progress_callback_is_called(self, mock_graphdb):
+        """progress_callback must be fired on each log_step so the web UI streams live."""
+        mock_graphdb.connect.return_value = False  # triggers a log_step("Connection", ..., "ERROR")
+        received: list[str] = []
+        builder = self._make_builder()
+        builder.progress_callback = received.append
+
+        builder.build_graph(global_strategy="H")
+
+        self.assertTrue(len(received) >= 1, "progress_callback must be called at least once")
+        self.assertTrue(any("Connection" in msg for msg in received))
