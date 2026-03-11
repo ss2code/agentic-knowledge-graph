@@ -1,0 +1,119 @@
+{
+  "Product": {
+    "construction_type": "node",
+    "source_file": "products.csv",
+    "label": "Product",
+    "unique_column_name": "id",
+    "properties": [
+      "id",
+      "name"
+    ]
+  },
+  "ProductCategory": {
+    "construction_type": "node",
+    "source_file": "products.csv",
+    "label": "ProductCategory",
+    "unique_column_name": "category",
+    "properties": [
+      "category"
+    ]
+  },
+  "Ingredient": {
+    "construction_type": "node",
+    "source_file": "products.csv",
+    "label": "Ingredient",
+    "unique_column_name": "ingredients",
+    "properties": [
+      "name"
+    ],
+    "transformation": "Split column 'ingredients' by comma delimiter (',') and trim whitespace to create distinct nodes."
+  },
+  "CustomerReview": {
+    "construction_type": "node",
+    "source_file": "reviews.txt",
+    "label": "CustomerReview",
+    "unique_column_name": "hash_id",
+    "properties": [
+      "review_text"
+    ],
+    "rule": "Generate a unique hash (MD5/SHA) of the raw text line to serve as the ID."
+  },
+  "Sentiment": {
+    "construction_type": "node",
+    "source_file": "reviews.txt",
+    "label": "Sentiment",
+    "unique_column_name": "derived_sentiment",
+    "properties": [
+      "type"
+    ],
+    "rule": "Use NLP Sentiment Analysis on review text to classify as 'Positive', 'Negative', or 'Neutral'."
+  },
+  "CustomerExperience": {
+    "construction_type": "node",
+    "source_file": "reviews.txt",
+    "label": "CustomerExperience",
+    "unique_column_name": "extracted_aspect",
+    "properties": [
+      "aspect"
+    ],
+    "rule": "Use NLP Aspect Extraction to identify specific descriptors (e.g., 'soggy', 'slow', 'cold') referenced in the text."
+  },
+  "BELONGS_TO": {
+    "construction_type": "relationship",
+    "source_file": "products.csv",
+    "relationship_type": "BELONGS_TO",
+    "from_node_label": "Product",
+    "from_node_column": "id",
+    "to_node_label": "ProductCategory",
+    "to_node_column": "category"
+  },
+  "CONTAINS_INGREDIENT": {
+    "construction_type": "relationship",
+    "source_file": "products.csv",
+    "relationship_type": "CONTAINS_INGREDIENT",
+    "from_node_label": "Product",
+    "from_node_column": "id",
+    "to_node_label": "Ingredient",
+    "to_node_column": "ingredients",
+    "rule": "Create a relationship for every split value found in the ingredients column."
+  },
+  "DISCUSSES_PRODUCT": {
+    "construction_type": "relationship",
+    "source_file": "reviews.txt",
+    "relationship_type": "DISCUSSES_PRODUCT",
+    "from_node_label": "CustomerReview",
+    "from_node_column": "review_text",
+    "to_node_label": "Product",
+    "to_node_column": "name",
+    "rule": "Use Named Entity Recognition (NER) or fuzzy string matching to find Product.name within CustomerReview.review_text."
+  },
+  "HAS_SENTIMENT": {
+    "construction_type": "relationship",
+    "source_file": "reviews.txt",
+    "relationship_type": "HAS_SENTIMENT",
+    "from_node_label": "CustomerReview",
+    "from_node_column": "hash_id",
+    "to_node_label": "Sentiment",
+    "to_node_column": "derived_sentiment"
+  },
+  "REFLECTS_EXPERIENCE": {
+    "construction_type": "relationship",
+    "source_file": "reviews.txt",
+    "relationship_type": "REFLECTS_EXPERIENCE",
+    "from_node_label": "CustomerReview",
+    "from_node_column": "hash_id",
+    "to_node_label": "CustomerExperience",
+    "to_node_column": "extracted_aspect"
+  },
+  "MENTIONS_INGREDIENT": {
+    "construction_type": "relationship",
+    "source_file": "reviews.txt",
+    "relationship_type": "MENTIONS_INGREDIENT",
+    "from_node_label": "CustomerReview",
+    "from_node_column": "review_text",
+    "to_node_label": "Ingredient",
+    "to_node_column": "name",
+    "rule": "Scan review text for keywords matching Ingredient.name. This helps isolate if a complaint is about a specific component (e.g., 'Lettuce') rather than the whole product."
+  },
+  "reasoning": "This schema creates a 'Product Knowledge Graph' using the structured CSV data (Products, Categories, Ingredients) and links it to unstructured 'Voice of Customer' data. By splitting ingredients, we allow for granular Root Cause Analysis (e.g., identifying if 'Tomato' causes bad reviews across multiple different Pizza types). NLP extraction is required for the reviews to bridge the gap between unstructured text and structured graph entities."
+}

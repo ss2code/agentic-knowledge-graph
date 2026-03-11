@@ -1,0 +1,64 @@
+
+## Unstructured Extraction Results (28 Entities)
+- (:) {"name": "Chianti Classico"}
+- (:) {"name": "service"}
+- (:) {"name": "slow"}
+- (:) {"name": "House Salad"}
+- (:) {"name": "Lettuce"}
+- (:) {"name": "soggy"}
+- (:) {"name": "Pepperoni Pizza"}
+- (:) {"name": "Chardonnay"}
+- (:) {"name": "Chardonnay Grapes"}
+- (:) {"name": "bland"}
+- (:) {"name": "Bruschetta"}
+- (:) {"name": "Gelato"}
+- (:) {"name": "Basil"}
+- (:) {"name": "Tiramisu"}
+- (:) {"name": "Cocoa"}
+- (:) {"name": "rotten"}
+- (:) {"name": "Espresso"}
+- (:) {"name": "Coffee Beans"}
+- (:) {"name": "Spaghetti Carbonara"}
+- (:) {"name": "Cheese"}
+- (:) {"name": "Sugar"}
+- (:) {"name": "Vanilla"}
+- (:) {"name": "Tomato"}
+- (:) {"name": "Bread"}
+- (:) {"name": "Margherita Pizza"}
+- (:) {"name": "cold"}
+- (:) {"name": "stale"}
+- (:) {"name": "too salty"}
+
+## Unstructured Extraction Results (32 Entities)
+- (:) {"name": "Chianti Classico"}
+- (:) {"description": "slow service"}
+- (:) {"name": "House Salad"}
+- (:) {"description": "soggy Lettuce"}
+- (:) {"name": "Lettuce"}
+- (:) {"name": "Pepperoni Pizza"}
+- (:) {"name": "Chardonnay"}
+- (:) {"name": "Chardonnay Grapes"}
+- (:) {"description": "bland Chardonnay Grapes"}
+- (:) {"name": "Bruschetta"}
+- (:) {"name": "Basil"}
+- (:) {"description": "soggy Basil"}
+- (:) {"name": "Tiramisu"}
+- (:) {"name": "Cocoa"}
+- (:) {"description": "rotten Cocoa"}
+- (:) {"name": "Espresso"}
+- (:) {"name": "Coffee Beans"}
+- (:) {"description": "rotten Coffee Beans"}
+- (:) {"name": "Spaghetti Carbonara"}
+- (:) {"name": "Cheese"}
+- (:) {"description": "soggy Cheese"}
+- (:) {"name": "Gelato"}
+- (:) {"name": "Sugar"}
+- (:) {"description": "stale Sugar"}
+- (:) {"name": "Vanilla"}
+- (:) {"description": "soggy Vanilla"}
+- (:) {"name": "Tomato"}
+- (:) {"description": "cold Tomato"}
+- (:) {"name": "Bread"}
+- (:) {"description": "stale Bread"}
+- (:) {"name": "Margherita Pizza"}
+- (:) {"description": "too salty Coffee Beans"}

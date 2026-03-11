@@ -19,8 +19,16 @@ data/user_data/*
 # Generated DBs
 **/neo4j_home/
 # Keep config json files
-# Ignore large artifacts if any
-test_db_debug.txt
+
+# Preserved sample runs (committed for traceability)
+# data/sample_runs/ is committed
+
+# Runtime context artifacts
+data/approved_files.json
+data/system_state.json
+data/user_intent.json
+data/construction_plan.json
+data/extraction_plan.json
 *.log
 
 # Test Artifacts
@@ -30,3 +38,6 @@ tests/canned_data/user_data/
 
 # Editor
 .vscode/
+
+# Git worktrees
+.worktrees/
