@@ -46,6 +46,32 @@ class TestPipelineRunner(unittest.TestCase):
             data = json.load(f)
         self.assertIn(test_file, data["files"])
 
+    def test_approve_files_accepts_selected_paths_kwarg(self):
+        """Regression: approve_files() must accept selected_paths as a keyword argument.
+        This was broken when the UI called approve_files(selected_paths=[...]) against
+        a version of PipelineRunner that only accepted positional scan-all behavior."""
+        explicit_paths = ["/some/dir/products.csv", "/some/dir/reviews.txt"]
+        approved = self.runner.approve_files(selected_paths=explicit_paths)
+
+        self.assertEqual(approved, explicit_paths)
+        approved_path = os.path.join(self.tmp, "approved_files.json")
+        with open(approved_path) as f:
+            data = json.load(f)
+        self.assertEqual(data["files"], explicit_paths)
+
+    def test_approve_files_selected_paths_overrides_scan(self):
+        """When selected_paths is given, it is used directly (no dir scan)."""
+        # Put a file in user_data that should NOT appear in results
+        decoy = os.path.join(self.ctx.data_dir, "decoy.csv")
+        with open(decoy, "w") as f:
+            f.write("x\n")
+
+        explicit = ["/explicit/path/chosen.csv"]
+        approved = self.runner.approve_files(selected_paths=explicit)
+
+        self.assertNotIn(decoy, approved)
+        self.assertEqual(approved, explicit)
+
     @patch("agents.schema_agent.SchemaRefinementLoop")
     def test_run_schema_negotiation_calls_loop(self, MockLoop):
         mock_loop = MagicMock()

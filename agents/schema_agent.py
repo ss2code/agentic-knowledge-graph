@@ -65,12 +65,19 @@ class BaseAgent:
             tuple: (str response_text, str model_name)
         """
         if not self.client:
-            # Simulation Mode
-            return json.dumps({
-                "nodes": [], 
-                "relationships": [], 
+            # Simulation Mode — still log so the debug expander has content
+            simulated = json.dumps({
+                "nodes": [],
+                "relationships": [],
                 "reasoning": "SIMULATION MODE: No API Key provided."
-            }), "simulation-model"
+            })
+            if self.log_file:
+                from core.logging_utils import log_llm_interaction
+                log_llm_interaction(
+                    self.log_file, self.module_name, "simulation-model",
+                    function_name, prompt, simulated
+                )
+            return simulated, "simulation-model"
         
         candidates = [
             'gemini-3-pro-preview', # Best quality
