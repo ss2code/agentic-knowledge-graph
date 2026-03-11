@@ -242,6 +242,22 @@ class IntentAgent:
 
             return False, f"Guidance: That is a bit vague. I need to know what you want to connect. \nTry: 'I want to trace [Source] to [Target]'."
 
+    def refine_intent_from_text(self, goal: str) -> dict:
+        """
+        Takes a raw goal string, calls LLM, returns refined intent dict.
+        Saves user_intent.json to self.data_dir.
+        Raises ValueError if LLM rejects the goal (not specific enough).
+        Raises Exception if LLM call fails entirely.
+        """
+        is_valid, response_text = self.refine_intent(goal)
+
+        if is_valid:
+            intent_dict = json.loads(response_text)
+            self.save_intent(response_text)
+            return intent_dict
+        else:
+            raise ValueError(response_text)
+
     def save_intent(self, intent_json):
         """Saves the final intent to a file, acting as a contract for Phase 3."""
         os.makedirs(self.data_dir, exist_ok=True)
