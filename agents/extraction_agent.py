@@ -213,6 +213,38 @@ class ExtractionSchemaLoop:
             print(f"{RED}Error reading sample from {os.path.basename(file_path)}: {e}{RESET}")
             return ""
 
+    def propose_entities_step(self) -> dict:
+        """
+        Run NERAgent only. Returns {"entity_types": [...], "reasoning": "..."}.
+        Does NOT save anything. Raises Exception if LLM call fails.
+        """
+        intent, file_summaries, construction_plan = self.load_context()
+        json_str, model_name = self.ner_agent.propose_entities(intent, file_summaries, construction_plan)
+        return json.loads(json_str)
+
+    def propose_facts_step(self, entities: list) -> dict:
+        """
+        Run FactExtractionAgent only. Returns {"facts": [...], "reasoning": "...", "model_used": "..."}.
+        Does NOT save anything. Raises Exception if LLM call fails.
+        """
+        intent, file_summaries, _construction_plan = self.load_context()
+        json_str, model_name = self.fact_agent.propose_facts(intent, file_summaries, entities)
+        result = json.loads(json_str)
+        result["model_used"] = model_name
+        return result
+
+    def save_plan(self, entities: list, facts: list, model: str) -> None:
+        """
+        Saves extraction_plan.json with structure {"entities": entities, "facts": facts, "model_used": model}.
+        Also calls self.sm.mark_extraction_designed() if self.sm is present.
+        """
+        plan = {"entities": entities, "facts": facts, "model_used": model}
+        out_path = os.path.join(self.data_dir, 'extraction_plan.json')
+        with open(out_path, 'w') as f:
+            json.dump(plan, f, indent=2)
+        if hasattr(self, 'sm'):
+            self.sm.mark_extraction_designed()
+
     def run(self):
         print(f"\n{CYAN}--- ⛏️  Starting Extraction Logic Design ---{RESET}")
         
