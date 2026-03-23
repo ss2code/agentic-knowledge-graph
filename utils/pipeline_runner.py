@@ -11,35 +11,39 @@ import os
 
 from core.context import Context
 from state_manager import StateManager
+from services.llm_provider import AnthropicProvider
 
 
 class PipelineRunner:
-    def __init__(self, context: Context, api_key: str):
+    def __init__(self, context: Context, model_name: str = None):
         """
-        Store context and api_key.
-        Sets GEMINI_API_KEY in the environment if api_key is truthy.
+        Store context and model_name.
+        PROJECT_ANTHROPIC_API_KEY is read from the environment by AnthropicProvider — no need to
+        pass it through here.
         Creates a StateManager bound to context.base_path.
-        Does NOT start Neo4j or Docker containers.
+        Does NOT start Neo4j or Docker containers — call ensure_neo4j() before graph stages.
         """
         self.context = context
-        self.api_key = api_key
-        if api_key:
-            os.environ["GEMINI_API_KEY"] = api_key
+        self.model_name = model_name or AnthropicProvider.DEFAULT_MODEL
         self.sm = StateManager(base_path=context.base_path)
+
+    def ensure_neo4j(self) -> bool:
+        """Start the per-context Neo4j container if it is not already running (idempotent)."""
+        from services.container_service import ContainerService
+        svc = ContainerService(self.context)
+        if not svc.is_running():
+            print("Neo4j is not running for this context. Starting...")
+            return svc.start_container()
+        return True
 
     # ------------------------------------------------------------------
     # Stage 1 – Intent
     # ------------------------------------------------------------------
 
     def run_intent(self, goal: str) -> dict:
-        """
-        Drive the IntentAgent with a plain-text goal string.
-        Marks intent as updated on success.
-        Returns the intent dict.
-        """
         from agents.intent_agent import IntentAgent
 
-        agent = IntentAgent(data_dir=self.context.base_path)
+        agent = IntentAgent(data_dir=self.context.base_path, model_name=self.model_name)
         result = agent.refine_intent_from_text(goal)
         self.sm.mark_intent_updated()
         return result
@@ -80,16 +84,11 @@ class PipelineRunner:
     # ------------------------------------------------------------------
 
     def run_schema_negotiation(self) -> dict:
-        """
-        Run the SchemaRefinementLoop.
-        Marks schema as valid if the loop reports success.
-        Returns the construction_plan.json dict, or {} if the file is missing.
-        """
         from agents.schema_agent import SchemaRefinementLoop
 
         loop = SchemaRefinementLoop(
-            api_key=self.api_key,
             data_dir=self.context.base_path,
+            model_name=self.model_name,
         )
         success = loop.run()
         if success:
@@ -106,64 +105,43 @@ class PipelineRunner:
     # ------------------------------------------------------------------
 
     def propose_entities(self) -> dict:
-        """
-        Ask the ExtractionSchemaLoop to propose entity types.
-        Returns the proposal dict.
-        """
         from agents.extraction_agent import ExtractionSchemaLoop
 
         loop = ExtractionSchemaLoop(
-            api_key=self.api_key,
             data_dir=self.context.base_path,
+            model_name=self.model_name,
         )
         return loop.propose_entities_step()
 
     def propose_facts(self, entities: list) -> dict:
-        """
-        Ask the ExtractionSchemaLoop to propose facts for the given entity list.
-        Returns the proposal dict.
-        """
         from agents.extraction_agent import ExtractionSchemaLoop
 
         loop = ExtractionSchemaLoop(
-            api_key=self.api_key,
             data_dir=self.context.base_path,
+            model_name=self.model_name,
         )
         return loop.propose_facts_step(entities)
 
-    def save_extraction_plan(self, entities: list, facts: list, model: str) -> None:
-        """
-        Persist the extraction plan via ExtractionSchemaLoop.save_plan().
-        Injects self.sm so that save_plan can call mark_extraction_designed().
-        """
+    def save_extraction_plan(self, entities: list, facts: list, model: str = None) -> None:
         from agents.extraction_agent import ExtractionSchemaLoop
 
         loop = ExtractionSchemaLoop(
-            api_key=self.api_key,
             data_dir=self.context.base_path,
+            model_name=model or self.model_name,
         )
         loop.sm = self.sm
-        loop.save_plan(entities, facts, model)
+        loop.save_plan(entities, facts, model or self.model_name)
 
     # ------------------------------------------------------------------
     # Stage 5 – Graph build
     # ------------------------------------------------------------------
 
     def run_graph_build(self, strategy: str = 'H', progress_callback=None) -> bool:
-        """
-        Drive the GraphBuilderAgent to populate Neo4j.
-
-        Args:
-            strategy: 'H' (heuristic), 'L' (LLM), or 'I' (interactive — CLI only).
-                      Defaults to 'H' so web callers never hit input().
-            progress_callback: optional callable(message: str) invoked after each
-                               log_step for live streaming to the UI.
-        Marks graph as built on success. Returns True/False.
-        """
+        self.ensure_neo4j()
         from agents.graph_builder import GraphBuilderAgent
 
         agent = GraphBuilderAgent(
-            api_key=self.api_key,
+            model_name=self.model_name,
             context=self.context,
             progress_callback=progress_callback,
         )
@@ -177,34 +155,28 @@ class PipelineRunner:
     # ------------------------------------------------------------------
 
     def run_kg_pipeline(self, files: list) -> bool:
-        """
-        Run KgPipelineAgent for unstructured text files.
-        Returns True on success, False if an exception is raised.
-        """
+        self.ensure_neo4j()
+        import concurrent.futures
         from agents.kg_pipeline_agent import KgPipelineAgent
 
-        try:
-            agent = KgPipelineAgent(
-                api_key=self.api_key,
-                data_dir=self.context.base_path,
-            )
-            asyncio.run(agent.run_pipeline(files))
-            agent.resolve_entities()
-            self.sm.mark_graphrag_complete()
-            return True
-        except Exception:
-            return False
+        agent = KgPipelineAgent(
+            data_dir=self.context.base_path,
+            model_name=self.model_name,
+        )
+        # Run in a worker thread so asyncio.run() creates a fresh event loop,
+        # avoiding RuntimeError when called from within Streamlit's running loop.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(asyncio.run, agent.run_pipeline(files))
+            future.result()  # re-raises any exception from the pipeline
+        agent.resolve_entities()
+        self.sm.mark_graphrag_complete()
+        return True
 
     # ------------------------------------------------------------------
     # Visualization
     # ------------------------------------------------------------------
 
     def run_visualization(self) -> str:
-        """
-        Run the VisualizerAgent to regenerate the schema HTML.
-        Returns path to schema_viz.html.
-        Raises RuntimeError if the file was not created.
-        """
         from agents.visualizer_agent import VisualizerAgent
 
         viz = VisualizerAgent(context=self.context)
@@ -219,11 +191,6 @@ class PipelineRunner:
     # ------------------------------------------------------------------
 
     def run_export(self) -> str:
-        """
-        Export the graph to a GraphML file inside context.output_dir.
-        Mirrors the Orchestrator.run_export() logic.
-        Returns the destination path string.
-        """
         from services.graph_service import graphdb
 
         filename = f"{self.context.name}_dump.graphml"
@@ -240,15 +207,11 @@ class PipelineRunner:
     # ------------------------------------------------------------------
 
     def run_text_to_cypher(self, query: str) -> tuple:
-        """
-        Translate a natural-language query to Cypher and execute it.
-        Returns (cypher_string, result_rows).
-        """
         from agents.text_to_cypher_agent import TextToCypherAgent
 
         agent = TextToCypherAgent(
-            api_key=self.api_key,
             debug_dir=self.context.debug_dir,
+            model_name=self.model_name,
         )
         cypher = agent.generate_query_with_retry(query)
         results = agent.execute_query(cypher)

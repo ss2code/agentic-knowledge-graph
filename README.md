@@ -2,14 +2,14 @@
 
 This project provides an agent-based system for building, refining, and visualizing Knowledge Graphs from structured and unstructured data.
 
-> **Attribution**: This is an implementation using Antigravity IDE and Google AI Studio. It follows the [Agentic Knowledge Graph Construction](https://learn.deeplearning.ai/courses/agentic-knowledge-graph-construction/) course from DeepLearning.AI. (Please do not delete this attribution).
+> **Attribution**: This is an implementation using Claude Code and the Anthropic API. It follows the [Agentic Knowledge Graph Construction](https://learn.deeplearning.ai/courses/agentic-knowledge-graph-construction/) course from DeepLearning.AI. (Please do not delete this attribution).
 
 ## 🐣 Quick Start
 
 ### Prerequisites
 1.  **Install Python 3.10+** from [python.org](https://www.python.org/downloads/).
 2.  **Install Docker Desktop** from [docker.com](https://www.docker.com/products/docker-desktop/) and ensure it is running (`docker info` should work).
-3.  **Get a Gemini API Key** from [aistudio.google.com](https://aistudio.google.com/app/apikey).
+3.  **Get an Anthropic API Key** from [console.anthropic.com](https://console.anthropic.com/).
 
 ### Setup (Step-by-Step)
 1.  **Open your Terminal** (or Command Prompt).
@@ -27,10 +27,11 @@ This project provides an agent-based system for building, refining, and visualiz
     ```bash
     pip install -r requirements.txt
     ```
-5.  **Set your API Key** (Optional, you can also enter it when prompted):
+5.  **Set your API Key**:
     ```bash
-    export GEMINI_API_KEY="your_api_key_here"
+    export PROJECT_ANTHROPIC_API_KEY="your_api_key_here"
     ```
+    Without this, agents run in simulation mode and return empty JSON stubs.
 
 ### Running the App
 Run the orchestrator in interactive mode:
@@ -117,7 +118,22 @@ The orchestrator automatically manages a Docker container for each context to en
 
 ## 🔑 Environment Variables
 
-Create a `.env` file or export:
 ```bash
-export GEMINI_API_KEY="your_api_key"
+export PROJECT_ANTHROPIC_API_KEY="your_api_key"  # Required for LLM agents (Haiku default, Sonnet available)
+export NEO4J_URI="bolt://localhost:7687"          # Optional — defaults shown
+export NEO4J_USERNAME="neo4j"
+export NEO4J_PASSWORD="password"
 ```
+
+Without `PROJECT_ANTHROPIC_API_KEY`, all agents run in **simulation mode** (return empty JSON stubs). This is useful for UI testing without incurring API costs.
+
+## 🌐 Web UI
+
+Launch the Streamlit interface:
+```bash
+./run.sh web
+```
+
+The UI exposes all pipeline steps. At each LLM step a **model selector** lets you choose between:
+- **Haiku** — fast & cheap (default)
+- **Sonnet** — balanced quality

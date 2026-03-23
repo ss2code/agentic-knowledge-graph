@@ -13,7 +13,7 @@ class TestPipelineRunner(unittest.TestCase):
         os.makedirs(os.path.join(self.tmp, "debug"), exist_ok=True)
         os.makedirs(os.path.join(self.tmp, "output"), exist_ok=True)
         self.ctx = Context.from_path(self.tmp)
-        self.runner = PipelineRunner(self.ctx, api_key="test-key")
+        self.runner = PipelineRunner(self.ctx)
 
     def tearDown(self):
         import shutil
@@ -127,11 +127,10 @@ class TestPipelineRunner(unittest.TestCase):
         self.runner.save_extraction_plan(
             entities=["Restaurant"],
             facts=[{"subject": "Restaurant", "predicate": "HAS", "object": "Menu"}],
-            model="gemini-2.0-flash"
         )
 
         mock_loop.save_plan.assert_called_once_with(
             ["Restaurant"],
             [{"subject": "Restaurant", "predicate": "HAS", "object": "Menu"}],
-            "gemini-2.0-flash"
+            "claude-haiku-4-5-20251001"  # default model
         )

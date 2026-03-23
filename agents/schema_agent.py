@@ -1,8 +1,7 @@
 import os
 import json
 import time
-import random
-from google import genai
+from services.llm_provider import AnthropicProvider
 
 # Reuse colors
 CYAN = "\033[96m"
@@ -13,63 +12,39 @@ RESET = "\033[0m"
 
 class BaseAgent:
     """
-    Base class for all Agents interacting with Gemini models.
-    Handles API key validation, client initialization, and exponential backoff retry logic.
+    Base class for all agents. Uses AnthropicProvider for LLM calls.
+    Falls back to simulation mode when PROJECT_ANTHROPIC_API_KEY is not set.
     """
-    def __init__(self, api_key=None, debug_dir=None, module_name="BaseAgent"):
-        """
-        Initialize the BaseAgent.
-
-        Args:
-            api_key (str, optional): Gemini API Key. Defaults to env var or prompt.
-            debug_dir (str, optional): Directory for debug logs.
-            module_name (str): Name of the module for logging context.
-        """
-        self.api_key = api_key or self._get_api_key()
-        self.client = None
-        self.debug_dir = debug_dir
+    def __init__(self, model_name=None, debug_dir=None, module_name="BaseAgent",
+                 # Legacy params kept for call-site compatibility during migration
+                 api_key=None):
         self.module_name = module_name
+        self.model_name = model_name or AnthropicProvider.DEFAULT_MODEL
+        self.debug_dir = debug_dir
         self.log_file = None
-        
+
         if self.debug_dir:
             from core.logging_utils import get_log_file_path
             self.log_file = get_log_file_path(self.debug_dir, self.module_name)
 
-        if self.api_key:
-            try:
-                self.client = genai.Client(api_key=self.api_key)
-            except Exception as e:
-                print(f"{RED}Agent Init Failed: {e}{RESET}")
-
-    def _get_api_key(self):
-        key = os.getenv("GEMINI_API_KEY")
-        if key: return key
-        
-        # Fallback: Prompt User (Shared logic)
-        print(f"{YELLOW}⚠️ GEMINI_API_KEY not found in environment.{RESET}")
         try:
-            key = input(f"{CYAN}Enter Gemini API Key (visible): {RESET}").strip()
-            return key if key else None
-        except:
-            return None
+            self.provider = AnthropicProvider()
+        except ValueError:
+            print(f"{YELLOW}⚠️  PROJECT_ANTHROPIC_API_KEY not set. Running in SIMULATION MODE.{RESET}")
+            self.provider = None
 
     def _generate(self, prompt, function_name="Unknown"):
         """
-        Generates content from Gemini with retry logic for rate limits (429).
-        
-        Args:
-            prompt (str): Input prompt.
-            function_name (str): Function name for logging.
-            
+        Generate content via AnthropicProvider.
+
         Returns:
-            tuple: (str response_text, str model_name)
+            tuple: (str response_text, str model_used)
         """
-        if not self.client:
-            # Simulation Mode — still log so the debug expander has content
+        if self.provider is None:
             simulated = json.dumps({
                 "nodes": [],
                 "relationships": [],
-                "reasoning": "SIMULATION MODE: No API Key provided."
+                "reasoning": "SIMULATION MODE: No API key provided."
             })
             if self.log_file:
                 from core.logging_utils import log_llm_interaction
@@ -78,51 +53,15 @@ class BaseAgent:
                     function_name, prompt, simulated
                 )
             return simulated, "simulation-model"
-        
-        candidates = [
-            'gemini-3-pro-preview', # Best quality
-            'gemini-1.5-pro',       # Reliable fallback
-            'gemini-2.0-flash-exp', 
-            'gemini-2.0-flash', 
-            'gemini-1.5-flash'
-        ]
-        
-        errors = []
-        import re
-        
-        for model in candidates:
-            # Retry loop for specific model (handling 429s)
-            for attempt in range(3):
-                try:
-                    response = self.client.models.generate_content(model=model, contents=prompt)
-                    
-                    if self.log_file:
-                        from core.logging_utils import log_llm_interaction
-                        log_llm_interaction(self.log_file, self.module_name, model, function_name, prompt, response.text)
-                        
-                    return response.text, model
-                except Exception as e:
-                    error_str = str(e)
-                    # Check for Rate Limit / Quota
-                    if "429" in error_str or "quota" in error_str.lower() or "resource_exhausted" in error_str.lower():
-                        # Try to parse "retry in X seconds"
-                        wait_time = 10 # Default fallback
-                        match = re.search(r"retry in ([\d\.]+)s", error_str)
-                        if match:
-                            wait_time = float(match.group(1)) + 1 # Add 1s buffer
-                        
-                        if attempt < 2:
-                            print(f"{YELLOW}⏳ Quota hit on {model}. Waiting {wait_time:.1f}s...{RESET}")
-                            time.sleep(wait_time)
-                            continue
-                        else:
-                             errors.append(f"{model}: Rate limit persistent.")
-                    else:
-                        # Non-retriable error (e.g. 404, 400)
-                        errors.append(f"{model}: {error_str}")
-                        break
-        
-        raise Exception(f"All models failed: {errors}")
+
+        text, model_used = self.provider.generate(prompt, model=self.model_name, log_file=self.log_file)
+        if self.log_file:
+            from core.logging_utils import log_llm_interaction
+            log_llm_interaction(
+                self.log_file, self.module_name, model_used,
+                function_name, prompt, text
+            )
+        return text, model_used
 
 class SchemaProposalAgent(BaseAgent):
     """
@@ -277,22 +216,10 @@ class SchemaRefinementLoop:
     """
     Orchestrates the negotiation loop between the Proposer and Critic agents.
     """
-    def __init__(self, verbose=True, api_key=None, data_dir='data'):
-        """
-        Initialize the Refinement Loop.
-        
-        Args:
-            verbose (bool): Whether to print debug info to console.
-            api_key (str): Gemini API Key.
-            data_dir (str): Working directory.
-        """
-        # 1. Resolve Key once
-        self.api_key = api_key or BaseAgent()._get_api_key() # Use helper to prompt if needed
-        
-        # 2. Init Agents with that key
+    def __init__(self, verbose=True, api_key=None, data_dir='data', model_name=None):
         self.debug_dir = os.path.join(data_dir, 'debug')
-        self.proposer = SchemaProposalAgent(api_key=self.api_key, debug_dir=self.debug_dir, module_name="SchemaRefinement")
-        self.critic = SchemaCriticAgent(api_key=self.api_key, debug_dir=self.debug_dir, module_name="SchemaRefinement")
+        self.proposer = SchemaProposalAgent(model_name=model_name, debug_dir=self.debug_dir, module_name="SchemaRefinement")
+        self.critic = SchemaCriticAgent(model_name=model_name, debug_dir=self.debug_dir, module_name="SchemaRefinement")
         
         self.verbose = verbose
         self.data_dir = data_dir

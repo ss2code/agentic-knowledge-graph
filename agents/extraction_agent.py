@@ -130,21 +130,10 @@ class ExtractionSchemaLoop:
     Orchestrates the Extraction Logic Design process.
     Coordinates NER and Fact Extraction agents.
     """
-    def __init__(self, verbose=True, api_key=None, data_dir='data'):
-        """
-        Initialize the Extraction Logic Loop.
-
-        Args:
-            verbose (bool): Console verbosity.
-            api_key (str): Gemini API Key.
-            data_dir (str): Base data directory.
-        """
-        # Reuse BaseAgent logic for key resolution
-        self.api_key = api_key or BaseAgent()._get_api_key()
-        
+    def __init__(self, verbose=True, api_key=None, data_dir='data', model_name=None):
         self.debug_dir = os.path.join(data_dir, 'debug')
-        self.ner_agent = NERAgent(api_key=self.api_key, debug_dir=self.debug_dir, module_name="NERAgent")
-        self.fact_agent = FactExtractionAgent(api_key=self.api_key, debug_dir=self.debug_dir, module_name="FactExtractionAgent")
+        self.ner_agent = NERAgent(model_name=model_name, debug_dir=self.debug_dir, module_name="NERAgent")
+        self.fact_agent = FactExtractionAgent(model_name=model_name, debug_dir=self.debug_dir, module_name="FactExtractionAgent")
         
         self.verbose = verbose
         self.data_dir = data_dir

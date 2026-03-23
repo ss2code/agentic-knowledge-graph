@@ -16,6 +16,9 @@ from utils.context_scanner import (
     get_last_run_time,
     load_graph_build_log,
 )
+from services.llm_provider import AnthropicProvider
+
+_MODEL_LABELS = AnthropicProvider.MODEL_LABELS
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -27,13 +30,9 @@ st.set_page_config(layout="wide", page_title="KG Orchestrator")
 # Helpers
 # ---------------------------------------------------------------------------
 
-def get_api_key() -> str:
-    return st.session_state.get("api_key") or os.getenv("GEMINI_API_KEY", "")
-
-
-def make_runner(ctx: Context):
+def make_runner(ctx: Context, model_name: str = None):
     from utils.pipeline_runner import PipelineRunner
-    return PipelineRunner(context=ctx, api_key=get_api_key())
+    return PipelineRunner(context=ctx, model_name=model_name)
 
 
 def status_badge(label: str, value) -> str:
@@ -67,16 +66,6 @@ def reset_extraction_state():
 
 with st.sidebar:
     st.title("KG Orchestrator")
-
-    # API key
-    api_key_input = st.text_input(
-        "Gemini API Key",
-        type="password",
-        value=st.session_state.get("api_key", ""),
-        placeholder="Paste key or set GEMINI_API_KEY env var",
-    )
-    if api_key_input:
-        st.session_state["api_key"] = api_key_input
 
     st.divider()
 
@@ -163,16 +152,19 @@ with st.container(border=True):
         key="intent_goal",
         placeholder="e.g. Build a graph of restaurant menus with dishes, ingredients, and prices.",
     )
+    intent_model = st.selectbox(
+        "Model",
+        options=AnthropicProvider.MODELS,
+        format_func=lambda m: _MODEL_LABELS[m],
+        key="intent_model",
+    )
     if st.button("▶ Run Intent Refinement", key="run_intent"):
-        if not get_api_key():
-            st.error("Set a Gemini API key in the sidebar first.")
-        else:
-            try:
-                with st.spinner("Calling Gemini..."):
-                    make_runner(ctx).run_intent(goal)
-                st.rerun()
-            except Exception as e:
-                st.error(f"Intent agent failed: {e}")
+        try:
+            with st.spinner("Calling Anthropic..."):
+                make_runner(ctx, intent_model).run_intent(goal)
+            st.rerun()
+        except Exception as e:
+            st.error(f"Intent agent failed: {e}")
 
     logs = load_llm_logs(ctx.debug_dir, agent_prefix="IntentAgent")
     with st.expander(f"LLM Log — IntentAgent ({len(logs)} interactions)"):
@@ -251,16 +243,19 @@ with st.container(border=True):
     if plan := load_artifact(ctx.base_path, "construction_plan.json"):
         st.json(plan)
 
+    schema_model = st.selectbox(
+        "Model",
+        options=AnthropicProvider.MODELS,
+        format_func=lambda m: _MODEL_LABELS[m],
+        key="schema_model",
+    )
     if st.button("▶ Run Schema Negotiation", key="run_schema"):
-        if not get_api_key():
-            st.error("Set a Gemini API key in the sidebar first.")
-        else:
-            try:
-                with st.spinner("Negotiating schema with Gemini..."):
-                    result = make_runner(ctx).run_schema_negotiation()
-                st.rerun()
-            except Exception as e:
-                st.error(f"Schema negotiation failed: {e}")
+        try:
+            with st.spinner("Negotiating schema..."):
+                result = make_runner(ctx, schema_model).run_schema_negotiation()
+            st.rerun()
+        except Exception as e:
+            st.error(f"Schema negotiation failed: {e}")
 
     logs = load_llm_logs(ctx.debug_dir, agent_prefix="SchemaRefinement")
     with st.expander(f"LLM Log — SchemaRefinement ({len(logs)} interactions)"):
@@ -277,6 +272,13 @@ with st.container(border=True):
     col2.caption(f"Last run: {get_last_run_time(ctx.debug_dir, 'NERAgent') or 'never'}")
 
     existing_plan = load_artifact(ctx.base_path, "extraction_plan.json")
+
+    extraction_model = st.selectbox(
+        "Model",
+        options=AnthropicProvider.MODELS,
+        format_func=lambda m: _MODEL_LABELS[m],
+        key="extraction_model",
+    )
 
     if (existing_plan
             and not st.session_state.get("extraction_proposed_entities")
@@ -296,16 +298,13 @@ with st.container(border=True):
         # Step 4.1 — Propose entities
         if not proposed_entities:
             if st.button("▶ Propose Entities", key="propose_entities"):
-                if not get_api_key():
-                    st.error("Set a Gemini API key in the sidebar first.")
-                else:
-                    try:
-                        with st.spinner("Proposing entity types..."):
-                            result = make_runner(ctx).propose_entities()
-                        st.session_state["extraction_proposed_entities"] = result
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Entity proposal failed: {e}")
+                try:
+                    with st.spinner("Proposing entity types..."):
+                        result = make_runner(ctx, extraction_model).propose_entities()
+                    st.session_state["extraction_proposed_entities"] = result
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Entity proposal failed: {e}")
 
         # Step 4.2 — Review proposed entities
         elif proposed_entities and not entities_approved:
@@ -325,16 +324,13 @@ with st.container(border=True):
             if isinstance(proposed_entities, dict):
                 entities_list = proposed_entities.get("entities", [])
             if st.button("▶ Propose Facts", key="propose_facts"):
-                if not get_api_key():
-                    st.error("Set a Gemini API key in the sidebar first.")
-                else:
-                    try:
-                        with st.spinner("Proposing fact types..."):
-                            result = make_runner(ctx).propose_facts(entities_list)
-                        st.session_state["extraction_proposed_facts"] = result
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Fact proposal failed: {e}")
+                try:
+                    with st.spinner("Proposing fact types..."):
+                        result = make_runner(ctx, extraction_model).propose_facts(entities_list)
+                    st.session_state["extraction_proposed_facts"] = result
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Fact proposal failed: {e}")
 
         # Step 4.4 — Review proposed facts and save
         elif proposed_facts:
@@ -343,24 +339,21 @@ with st.container(border=True):
             feedback = st.text_input("Optional feedback for refinement", key="facts_feedback")
             col_a, col_b = st.columns(2)
             if col_a.button("✅ Save Plan", key="save_extraction_plan"):
-                if not get_api_key():
-                    st.error("Set a Gemini API key in the sidebar first.")
-                else:
-                    try:
-                        entities_list = proposed_entities if isinstance(proposed_entities, list) else []
-                        if isinstance(proposed_entities, dict):
-                            entities_list = proposed_entities.get("entities", [])
-                        facts_list = proposed_facts if isinstance(proposed_facts, list) else []
-                        if isinstance(proposed_facts, dict):
-                            facts_list = proposed_facts.get("facts", [])
-                        with st.spinner("Saving extraction plan..."):
-                            make_runner(ctx).save_extraction_plan(
-                                entities_list, facts_list, model="gemini-2.0-flash"
-                            )
-                        clear_extraction_state()
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Saving extraction plan failed: {e}")
+                try:
+                    entities_list = proposed_entities if isinstance(proposed_entities, list) else []
+                    if isinstance(proposed_entities, dict):
+                        entities_list = proposed_entities.get("entities", [])
+                    facts_list = proposed_facts if isinstance(proposed_facts, list) else []
+                    if isinstance(proposed_facts, dict):
+                        facts_list = proposed_facts.get("facts", [])
+                    with st.spinner("Saving extraction plan..."):
+                        make_runner(ctx, extraction_model).save_extraction_plan(
+                            entities_list, facts_list
+                        )
+                    clear_extraction_state()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Saving extraction plan failed: {e}")
             if col_b.button("🔁 Retry Facts", key="retry_facts"):
                 st.session_state.pop("extraction_proposed_facts", None)
                 st.rerun()
@@ -389,32 +382,35 @@ with st.container(border=True):
     )
     strategy_code = strategy[0]  # 'H' or 'L'
 
+    graph_build_model = st.selectbox(
+        "Model",
+        options=AnthropicProvider.MODELS,
+        format_func=lambda m: _MODEL_LABELS[m],
+        key="graph_build_model",
+    )
     if st.button("▶ Run Graph Build", key="run_graph_build", type="primary"):
-        if not get_api_key():
-            st.error("Set a Gemini API key in the sidebar first.")
-        else:
-            # Live progress container — each log_step fires a callback that writes here
-            with st.status("Building graph…", expanded=True) as build_status:
-                live_log = st.empty()
-                log_lines: list[str] = []
+        # Live progress container — each log_step fires a callback that writes here
+        with st.status("Building graph…", expanded=True) as build_status:
+            live_log = st.empty()
+            log_lines: list[str] = []
 
-                def _progress(msg: str):
-                    log_lines.append(msg)
-                    live_log.markdown("\n\n---\n\n".join(log_lines))
+            def _progress(msg: str):
+                log_lines.append(msg)
+                live_log.markdown("\n\n---\n\n".join(log_lines))
 
-                try:
-                    success = make_runner(ctx).run_graph_build(
-                        strategy=strategy_code,
-                        progress_callback=_progress,
-                    )
-                    if success:
-                        build_status.update(label="Graph built ✅", state="complete")
-                    else:
-                        build_status.update(label="Build finished with warnings ⚠️", state="error")
-                except Exception as e:
-                    build_status.update(label=f"Build failed ❌", state="error")
-                    st.error(f"Graph build failed: {e}")
-            st.rerun()
+            try:
+                success = make_runner(ctx, graph_build_model).run_graph_build(
+                    strategy=strategy_code,
+                    progress_callback=_progress,
+                )
+                if success:
+                    build_status.update(label="Graph built ✅", state="complete")
+                else:
+                    build_status.update(label="Build finished with warnings ⚠️", state="error")
+            except Exception as e:
+                build_status.update(label=f"Build failed ❌", state="error")
+                st.error(f"Graph build failed: {e}")
+        st.rerun()
 
     # Persistent build log
     graph_log = load_graph_build_log(ctx.debug_dir)
@@ -457,15 +453,19 @@ with st.container(border=True):
         selected_files = []
         st.info("No .txt or .md files found in user_data/.")
 
+    graphrag_model = st.selectbox(
+        "Model",
+        options=AnthropicProvider.MODELS,
+        format_func=lambda m: _MODEL_LABELS[m],
+        key="graphrag_model",
+    )
     if st.button("▶ Run GraphRAG Pipeline", key="run_kg_pipeline"):
-        if not get_api_key():
-            st.error("Set a Gemini API key in the sidebar first.")
-        elif not selected_files:
+        if not selected_files:
             st.warning("Select at least one file.")
         else:
             try:
                 with st.spinner("Running KG pipeline..."):
-                    success = make_runner(ctx).run_kg_pipeline(selected_files)
+                    success = make_runner(ctx, graphrag_model).run_kg_pipeline(selected_files)
                 if success:
                     st.success("GraphRAG pipeline completed.")
                 else:
@@ -523,16 +523,13 @@ with st.container(border=True):
         components.html(html_content, height=600, scrolling=True)
 
     if st.button("▶ Run Visualization", key="run_viz"):
-        if not get_api_key():
-            st.error("Set a Gemini API key in the sidebar first.")
-        else:
-            try:
-                with st.spinner("Generating visualization..."):
-                    path = make_runner(ctx).run_visualization()
-                st.success(f"Visualization saved to {path}")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Visualization failed: {e}")
+        try:
+            with st.spinner("Generating visualization..."):
+                path = make_runner(ctx).run_visualization()
+            st.success(f"Visualization saved to {path}")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Visualization failed: {e}")
 
 # ---------------------------------------------------------------------------
 # Step 9 — Text-to-Cypher
@@ -548,15 +545,19 @@ with st.container(border=True):
         key="nl_query",
         placeholder="e.g. Show all dishes with price under $15",
     )
+    t2c_model = st.selectbox(
+        "Model",
+        options=AnthropicProvider.MODELS,
+        format_func=lambda m: _MODEL_LABELS[m],
+        key="t2c_model",
+    )
     if st.button("▶ Translate & Run", key="run_t2c"):
-        if not get_api_key():
-            st.error("Set a Gemini API key in the sidebar first.")
-        elif not nl_query.strip():
+        if not nl_query.strip():
             st.warning("Enter a query first.")
         else:
             try:
                 with st.spinner("Generating and running Cypher..."):
-                    cypher, results = make_runner(ctx).run_text_to_cypher(nl_query)
+                    cypher, results = make_runner(ctx, t2c_model).run_text_to_cypher(nl_query)
                 st.code(cypher, language="cypher")
                 if results:
                     st.dataframe(results)
@@ -600,13 +601,10 @@ with st.container(border=True):
                 )
 
     if st.button("▶ Export Graph", key="run_export"):
-        if not get_api_key():
-            st.error("Set a Gemini API key in the sidebar first.")
-        else:
-            try:
-                with st.spinner("Exporting graph to GraphML..."):
-                    dst = make_runner(ctx).run_export()
-                st.success(f"Exported to {dst}")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Export failed: {e}")
+        try:
+            with st.spinner("Exporting graph to GraphML..."):
+                dst = make_runner(ctx).run_export()
+            st.success(f"Exported to {dst}")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Export failed: {e}")

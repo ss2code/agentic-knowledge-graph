@@ -1,0 +1,8 @@
+#!/bin/bash
+echo "▶ Running Anthropic integration tests (pre-push)..."
+pytest tests/test_anthropic_integration.py -v
+if [ $? -ne 0 ]; then
+    echo "❌ Integration tests failed. Push aborted."
+    exit 1
+fi
+echo "✅ Integration tests passed."

@@ -87,6 +87,30 @@ def ensure_single_backup_copy(backup_dir, module_name):
         except Exception as e:
             print(f"Failed to delete old backup {f}: {e}")
 
+def log_retry_event(log_file_path, module_name, model_name, attempt, max_retries, wait_seconds):
+    """
+    Appends a rate-limit retry event to the specified log file.
+    """
+    os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    if not os.path.exists(log_file_path) or os.path.getsize(log_file_path) == 0:
+        with open(log_file_path, "w", encoding="utf-8") as f:
+            f.write(f"# LLM Debug Log: {module_name}\n\n")
+
+    entry = (
+        f"\n## {timestamp} | ⏳ Rate Limit Retry\n\n"
+        f"**Model**: `{model_name}`  \n"
+        f"**Attempt**: {attempt} / {max_retries}  \n"
+        f"**Waiting**: {wait_seconds:.1f}s before next attempt\n\n---\n"
+    )
+    with open(log_file_path, "a", encoding="utf-8") as f:
+        f.write(entry)
+
+    print(f"\033[96m[DEBUG] Retry logged: {os.path.basename(log_file_path)} "
+          f"(attempt {attempt}/{max_retries}, wait {wait_seconds:.1f}s)\033[0m")
+
+
 def log_llm_interaction(log_file_path, module_name, model_name, function_name, prompt, response, system_instruction=None):
     """
     Appends an LLM interaction to the specified log file in Markdown format.

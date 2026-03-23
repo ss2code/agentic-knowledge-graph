@@ -10,11 +10,11 @@ class GraphBuilderAgent(BaseAgent):
     based on the Construction Plan.
     Now supports Interactive Mode (Heuristic vs LLM).
     """
-    def __init__(self, api_key=None, verbose=True, context=None, progress_callback=None):
+    def __init__(self, api_key=None, verbose=True, context=None, progress_callback=None, model_name=None):
         """
         Initialize the Graph Builder.
         """
-        super().__init__(api_key=api_key, module_name="GraphBuilderAgent")
+        super().__init__(model_name=model_name, module_name="GraphBuilderAgent")
         self.verbose = verbose
         self.context = context
         self.progress_callback = progress_callback  # callable(message: str) for live UI updates

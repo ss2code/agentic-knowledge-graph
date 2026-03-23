@@ -41,3 +41,5 @@ tests/canned_data/user_data/
 
 # Git worktrees
 .worktrees/
+.envrc
+.secrets
