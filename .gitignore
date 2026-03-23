@@ -8,33 +8,26 @@ venv/
 
 # Logs
 *.log
+
+# Neo4j / Data — per-context: ignore only large binary/volume artifacts
+data/*/output/
+data/*/neo4j_home/
+data/*/config/
+# debug/ and *.json plan files are kept — small, useful for history/demo
+
+# Safety catch: root-level context artifacts (if data/ is used as a context directly)
+data/output/
 data/debug/
-!data/debug/.gitkeep
+data/config/
 
-# Neo4j / Data
-data/user_data/*
-
-!data/user_data/.gitkeep
-
-# Generated DBs
+# Generated DBs (global catch-all)
 **/neo4j_home/
-# Keep config json files
 
 # Preserved sample runs (committed for traceability)
 # data/sample_runs/ is committed
 
-# Runtime context artifacts
-data/approved_files.json
-data/system_state.json
-data/user_intent.json
-data/construction_plan.json
-data/extraction_plan.json
-*.log
-
 # Test Artifacts
-# data/test_*
-# data/test_e2e_golden/
-tests/canned_data/user_data/
+# tests/canned_data/user_data/ is now committed directly
 
 # Editor
 .vscode/

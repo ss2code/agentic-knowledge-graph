@@ -29,7 +29,7 @@ class GraphBuilderAgent(BaseAgent):
              self.log_file = get_log_file_path(self.debug_dir, self.module_name)
              self.log_path = self.log_file # Alias for compatibility
         else:
-             self.log_path = os.path.join('data', 'debug', 'graph_build_log.md')
+             raise ValueError("GraphBuilderAgent requires a context object.")
 
     def log_step(self, step_name, details, status="INFO"):
         """Logs a step to the markdown file with a timestamp.

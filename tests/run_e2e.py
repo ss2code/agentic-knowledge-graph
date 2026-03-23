@@ -14,8 +14,8 @@ from services.graph_service import graphdb
 from orchestrator import Orchestrator
 
 # Setup Config
-CANNED_DATA_DIR = "data/user_data/restaraunt_data" # Existing golden dataset
-TEST_CONTEXT_NAME = "test_e2e_golden"
+CANNED_DATA_DIR = "data/restaurant_data"  # Canonical test context
+TEST_CONTEXT_NAME = "test_e2e_run"
 TEST_BASE_PATH = os.path.abspath(os.path.join(os.getcwd(), 'data', TEST_CONTEXT_NAME))
 
 class TestE2EPipeline(unittest.TestCase):

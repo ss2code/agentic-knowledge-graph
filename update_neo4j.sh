@@ -16,7 +16,7 @@ docker run -d \
     -e NEO4J_apoc_import_file_enabled=true \
     -e NEO4J_apoc_import_file_use__neo4j__config=true \
     -e NEO4J_dbms_security_procedures_unrestricted=apoc.* \
-    -v $PWD/data/user_data:/var/lib/neo4j/import \
+    -v $PWD/data/restaurant_data/user_data:/var/lib/neo4j/import \
     -v neo4j_data:/data \
     -v neo4j_logs:/logs \
     neo4j:latest

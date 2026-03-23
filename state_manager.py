@@ -2,9 +2,6 @@ import json
 import os
 import datetime
 
-STATE_FILE = 'data/system_state.json'
-INTENT_FILE = 'data/user_intent.json'
-
 class StateManager:
     def __init__(self, base_path='data'):
         self.base_path = base_path

@@ -1,6 +1,0 @@
-{
-  "intent": "Root Cause Analysis of Customer Complaints in Restaurants",
-  "description": "Identify the underlying causes of customer complaints by connecting customer reviews, sentiments, experiences, specific ingredients, and product categories within a restaurant's offerings to improve overall customer satisfaction.",
-  "primary_entities": ["CustomerReview", "Sentiment", "CustomerExperience", "Ingredient", "ProductCategory"],
-  "reasoning": "This is a good graph use case because it involves connecting disparate data points (complaints, sentiments, ingredients, product categories) to identify causal relationships, which is a core strength of knowledge graphs. The goal is specific and actionable."
-}
