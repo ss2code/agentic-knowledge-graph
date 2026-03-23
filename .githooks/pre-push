@@ -1,6 +1,13 @@
 #!/bin/bash
+# Run from repo root so imports resolve correctly
+cd "$(git rev-parse --show-toplevel)"
+
+# Use venv python if present, fall back to system python3
+PYTHON="${PWD}/.venv/bin/python3"
+[ -x "$PYTHON" ] || PYTHON="python3"
+
 echo "▶ Running Anthropic integration tests (pre-push)..."
-pytest tests/test_anthropic_integration.py -v
+"$PYTHON" -m pytest tests/test_anthropic_integration.py -v
 if [ $? -ne 0 ]; then
     echo "❌ Integration tests failed. Push aborted."
     exit 1
