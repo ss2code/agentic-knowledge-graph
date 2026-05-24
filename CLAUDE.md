@@ -92,3 +92,11 @@ Each project gets its own directory tree. Multiple contexts can coexist with sep
 - **Commits**: Use Conventional Commits — `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:` prefixes.
 - **Formatting/linting**: Run `ruff check .` and `ruff format .` before committing (install with `pip install ruff` if needed). No config file yet; defaults are fine.
 - **Streamlit widgets**: Always add an explicit `key=` parameter — never rely on position-based auto-keys.
+<!-- pwiki:claude-rules:start -->
+## pwiki
+
+This repo uses pwiki in an offline-first way.
+- Durable content lives in `pwiki/`
+- `pwiki cleanup offline-preserve` removes pwiki-managed overlays and keeps markdown content
+- If graph is enabled, Claude may read `pwiki/.graph/STRUCTURE_REPORT.md` before targeted source reads
+<!-- pwiki:claude-rules:end -->

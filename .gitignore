@@ -8,6 +8,14 @@ venv/
 
 # Logs
 *.log
+# -----
+CLAUDE.md
+.agents/
+.claude/
+.obsidian/
+AGENTS.md
+docs/system-overview.md
+pwiki.toml
 
 # Neo4j / Data — per-context: ignore only large binary/volume artifacts
 data/*/output/
@@ -19,7 +27,7 @@ data/*/config/
 data/output/
 data/debug/
 data/config/
-
+data/*
 # Generated DBs (global catch-all)
 **/neo4j_home/
 
@@ -36,3 +44,8 @@ data/config/
 .worktrees/
 .envrc
 .secrets
+
+# pwiki — ephemeral scratch and Obsidian local config
+pwiki/raw/
+pwiki/.obsidian/
+pwiki/*

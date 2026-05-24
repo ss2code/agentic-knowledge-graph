@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>System Overview</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { max-width: 980px; margin: 2rem auto; padding: 0 1rem; font: 18px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  pre { background: #f5f5f5; padding: 1rem; border-radius: 6px; overflow-x: auto; }
+  code { background: #f0f0f0; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
+  pre code { background: transparent; padding: 0; }
+  table { border-collapse: collapse; margin: 1rem 0; }
+  th, td { border: 1px solid #ccc; padding: 0.4rem 0.8rem; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; }
+  h1, h2, h3 { margin-top: 2rem; }
+  h1 { border-bottom: 2px solid #ccc; padding-bottom: 0.3rem; }
+  h2 { border-bottom: 1px solid #eee; padding-bottom: 0.2rem; }
+  blockquote { border-left: 4px solid #ccc; margin: 1rem 0; padding: 0 1rem; color: #555; }
+  .mermaid { background: white; padding: 1rem; border-radius: 6px; margin: 1rem 0; text-align: center; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #1e1e1e; color: #ddd; }
+    pre, code { background: #2a2a2a; }
+    th { background: #333; }
+    th, td { border-color: #444; }
+    .mermaid { background: #f5f5f5; }
+  }
+</style>
+</head>
+<body>
+<div id="content">Loading…</div>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: false, theme: "default", themeVariables: { fontSize: "17px" } });
+
+  const md = String.raw`<!-- last-reviewed: 2026-05-05 -->
+<!-- sections: llm-bootstrap, features, architecture, components, code-map, data-flow, decisions, data-structures, extension-points, dependencies, operations, glossary, workflow -->
+# Agentic Knowledge Graph Orchestrator — System Overview
+
+## LLM Bootstrap {#llm-bootstrap}
+<!-- last-verified: 2026-05-05 -->
+
+**What this project is in one line:** A Python orchestrator that drives a chain of LLM-backed agents (Anthropic Claude) to design, build, query, and visualise a Neo4j knowledge graph from a directory of user files.
+
+**Invariants that must not break:**
+- LLM agents must run in **simulation mode** (return empty JSON stubs) when no API key is set — never crash the pipeline. Enforced in \x60agents/schema_agent.py:30\x60 (provider construction try/except) and \x60agents/schema_agent.py:43\x60 (\x60_generate\x60 simulation branch).
+- \x60AnthropicProvider\x60 raises if \x60PROJECT_ANTHROPIC_API_KEY\x60 is unset — \x60BaseAgent\x60 is the only allowed catcher, callers must not handle the \x60ValueError\x60. \x60services/llm_provider.py:60\x60.
+- Each project context owns a separate Docker container named \x60neo4j-<context.name>\x60. \x60services/container_service.py:16\x60.
+- \x60GraphBuilderAgent.build_graph()\x60 **wipes the database** before importing — "clean slate policy". \x60agents/graph_builder.py:249\x60.
+- State writes must invalidate downstream stages: editing intent or files marks schema and graph as \x60STALE\x60. \x60state_manager.py:38\x60, \x60state_manager.py:44\x60.
+- Text-to-Cypher must be **read-only**: never generate \x60CREATE\x60/\x60DELETE\x60/\x60MERGE\x60/\x60SET\x60. Enforced in the system prompt at \x60agents/text_to_cypher_agent.py:89\x60.
+- The user-data folder is mounted into the Neo4j container as \x60/var/lib/neo4j/import\x60 so \x60LOAD CSV FROM 'file:///foo.csv'\x60 can find files. \x60services/container_service.py:94\x60.
+- Per-agent debug logs rotate to \x60debug/backup/\x60 with a *single-backup-copy* policy. \x60core/logging_utils.py:23\x60.
+
+**Entry points:**
+- Interactive CLI: \x60python3 orchestrator.py\x60 → \x60orchestrator.py:437\x60
+- Headless CLI: \x60python3 orchestrator.py --context <path> --cli --action build\x60 → \x60orchestrator.py:452\x60
+- Web UI: \x60./run.sh web\x60 → \x60app.py:27\x60
+- Tests: \x60pytest\x60 (unit) and \x60python3 tests/run_e2e.py\x60 (full E2E on port 7688)
+
+**If you're modifying X, start at Y:** see [Code Map](#code-map).
+
+**Non-goals:**
+- Multi-context concurrent execution. The Docker port mapping is hard-coded to \x607474\x60/\x607687\x60, so only one context can run at a time. \x60services/container_service.py:87\x60.
+- Streaming or chat-style LLM interaction. All \x60_generate\x60 calls are single-turn, max 8192 tokens. \x60services/llm_provider.py:94\x60.
+- Hosted deployment. The system assumes a local Docker daemon and a developer-owned filesystem.
+
+---
+
+## What It Does {#features}
+<!-- last-verified: 2026-05-05 -->
+
+The orchestrator turns a folder of mixed structured/unstructured data (CSV, Markdown, plain text) into a queryable Neo4j knowledge graph by interviewing the user about their goal, proposing a schema, designing extraction rules, and importing the data. The audience is a developer or analyst who wants to explore relationships across heterogeneous documents without writing a custom ETL pipeline. It is **not** a hosted service or a continuously-running ingestion pipeline — every run is a one-shot transformation rooted in a "context" directory.
+
+Top capabilities:
+- Define a project goal interactively and lock it as \x60user_intent.json\x60.
+- Negotiate a graph schema with a propose/critique LLM loop and persist it as \x60construction_plan.json\x60.
+- Design unstructured-text extraction rules (entity types + relationship triples) into \x60extraction_plan.json\x60.
+- Import structured CSVs into Neo4j via heuristic or LLM-generated Cypher (or compare both per node).
+- Run a GraphRAG pipeline on free-text files, then resolve extracted entities against domain nodes.
+- Ask natural-language questions of the resulting graph via a read-only text-to-Cypher chat loop.
+- Visualise the schema as an interactive \x60vis-network\x60 HTML page or export a GraphML dump.
+
+---
+
+## Architecture Overview {#architecture}
+<!-- last-verified: 2026-05-05 -->
+
+The orchestrator is layered: a thin entry layer (CLI or Streamlit UI) calls a controller (\x60Orchestrator\x60 or \x60PipelineRunner\x60), which composes specialised agents that share two services — \x60GraphService\x60 for Neo4j queries and \x60ContainerService\x60 for Docker lifecycle. State persists as plain JSON files inside a per-project context directory.
+
+\x60\x60\x60mermaid
+graph TD
+    CLI["Orchestrator (CLI)<br/>orchestrator.py"] --> SM["StateManager<br/>state_manager.py"]
+    WEB["Streamlit UI<br/>app.py"] --> PR["PipelineRunner<br/>utils/pipeline_runner.py"]
+    PR --> SM
+    CLI --> CS["ContainerService<br/>services/container_service.py"]
+    PR --> CS
+    CS --"docker run/start/stop"--> DKR[("Docker: neo4j-&lt;ctx&gt;")]
+
+    CLI --> IA["IntentAgent<br/>agents/intent_agent.py"]
+    CLI --> SR["SchemaRefinementLoop<br/>agents/schema_agent.py"]
+    CLI --> ESL["ExtractionSchemaLoop<br/>agents/extraction_agent.py"]
+    CLI --> GB["GraphBuilderAgent<br/>agents/graph_builder.py"]
+    CLI --> KG["KgPipelineAgent<br/>agents/kg_pipeline_agent.py"]
+    CLI --> T2C["TextToCypherAgent<br/>agents/text_to_cypher_agent.py"]
+    CLI --> VZ["VisualizerAgent<br/>agents/visualizer_agent.py"]
+
+    IA --"BaseAgent._generate(prompt)"--> AP["AnthropicProvider<br/>services/llm_provider.py"]
+    SR --> AP
+    ESL --> AP
+    GB --> AP
+    T2C --> AP
+    KG --"AnthropicLLM adapter"--> AP
+
+    AP --"messages.create()"--> ANT[("Anthropic API")]
+
+    GB --"Cypher LOAD CSV"--> GS["GraphService (graphdb)<br/>services/graph_service.py"]
+    KG --"SimpleKGPipeline driver"--> GS
+    T2C --"send_query / validate_cypher"--> GS
+    VZ --"meta queries"--> GS
+    GS --"Bolt 7687"--> NEO[("Neo4j (per-context)")]
+
+    SM --"system_state.json"--> FS[("Context dir<br/>user_intent.json<br/>construction_plan.json<br/>extraction_plan.json<br/>approved_files.json")]
+\x60\x60\x60
+
+The most consequential design choice visible above: **agents do not own state**. They read JSON artifacts written by upstream stages and write their own artifact, while \x60StateManager\x60 records *which* stages are valid. This makes every stage independently re-runnable, lets the Streamlit UI and CLI share the same engine, and means there is no in-memory pipeline object to keep alive between invocations.
+
+---
+
+## Component Inventory {#components}
+<!-- last-verified: 2026-05-05 -->
+
+| Component | Owns / Responsible for | Does NOT own |
+|-----------|------------------------|--------------|
+| \x60orchestrator.py:Orchestrator\x60 | Top-level CLI menu, sequencing of stages, calling \x60ContainerService\x60 on startup, dispatching to agents | LLM calls, Cypher generation, Neo4j configuration |
+| \x60utils/pipeline_runner.py:PipelineRunner\x60 | Stage-level façade for the Streamlit UI; wraps every agent call with \x60StateManager\x60 updates | UI rendering, session state, Docker startup decisions outside \x60ensure_neo4j()\x60 |
+| \x60state_manager.py:StateManager\x60 | Read/write \x60system_state.json\x60; cascade \x60STALE\x60 flags from intent → schema → graph | The artifact files themselves (each agent writes its own) |
+| \x60core/context.py:Context\x60 | Path resolution for \x60user_data/\x60, \x60debug/\x60, \x60output/\x60, \x60neo4j_home/\x60, \x60config/\x60; directory creation | Reading the files in those paths |
+| \x60services/container_service.py:ContainerService\x60 | Per-context Neo4j container lifecycle (start/stop/recreate, healthcheck via \x60cypher-shell\x60) | Cypher execution, schema, port allocation policy beyond defaults |
+| \x60services/graph_service.py:GraphService\x60 (\x60graphdb\x60 singleton) | Bolt connection, \x60send_query\x60, \x60validate_cypher\x60 (EXPLAIN), nuke/import/export GraphML | Container lifecycle, prompt formatting |
+| \x60services/llm_provider.py:AnthropicProvider\x60 | Anthropic API call with rate-limit retry/backoff, model defaulting | Prompt content, logging, simulation fallback |
+| \x60agents/schema_agent.py:BaseAgent\x60 | Provider construction, simulation fallback, debug-log writing for every LLM call | Prompt design (subclasses own that), context loading |
+| \x60agents/intent_agent.py:IntentAgent\x60 | Interview user about their goal, write \x60user_intent.json\x60 | Schema design, file scanning |
+| \x60agents/schema_agent.py:SchemaRefinementLoop\x60 | Propose/critique loop (max 3 iterations) writing \x60construction_plan.json\x60 | Extraction logic, graph import |
+| \x60agents/extraction_agent.py:ExtractionSchemaLoop\x60 | NER + fact-extraction design, writes \x60extraction_plan.json\x60 | Actual extraction (that's \x60KgPipelineAgent\x60) |
+| \x60agents/graph_builder.py:GraphBuilderAgent\x60 | Constraints + node + relationship import from CSVs (heuristic / LLM / compare); nuke before build | Unstructured-text extraction; entity resolution |
+| \x60agents/kg_pipeline_agent.py:KgPipelineAgent\x60 | Run \x60neo4j_graphrag.SimpleKGPipeline\x60 over \x60.md\x60/\x60.txt\x60; entity resolution via Jaro-Winkler | CSV import, schema design |
+| \x60agents/text_to_cypher_agent.py:TextToCypherAgent\x60 | Schema-grounded read-only NL→Cypher with EXPLAIN-validation retry | Mutation queries, schema design |
+| \x60agents/visualizer_agent.py:VisualizerAgent\x60 | Build interactive \x60schema_viz.html\x60 from live graph meta-queries | Static documentation, GraphML export |
+| \x60services/anthropic_graphrag.py\x60 | \x60LLMInterface\x60/\x60Embedder\x60 adapters bridging \x60AnthropicProvider\x60 + \x60sentence-transformers\x60 into \x60neo4j_graphrag\x60 | Pipeline orchestration |
+| \x60core/logging_utils.py\x60 | Per-module timestamped logs in \x60debug/\x60, rotation to \x60backup/\x60, single-backup enforcement | Reading logs (that's \x60utils/context_scanner.py\x60) |
+| \x60utils/context_scanner.py\x60 | Pure-python read-only scanning of contexts and parsing of \x60debug_llm_*.md\x60 filenames | Writing logs, mutating state |
+
+---
+
+## Code Map {#code-map}
+<!-- last-verified: 2026-05-05 -->
+
+| If you want to... | Start here | Then probably also touch |
+|-------------------|-----------|--------------------------|
+| Add a new pipeline stage between intent and schema | \x60orchestrator.py:381\x60 (\x60main_loop\x60) and \x60utils/pipeline_runner.py:17\x60 | \x60state_manager.py\x60 (add a new flag), a new agent file in \x60agents/\x60 |
+| Change the propose/critique prompts or retry count | \x60agents/schema_agent.py:84\x60 (proposer prompt), \x60agents/schema_agent.py:165\x60 (critic prompt), \x60agents/schema_agent.py:267\x60 (\x60max_retries\x60) | \x60data/<ctx>/debug/debug_llm_SchemaRefinement_*.md\x60 (regression evidence) |
+| Add another LLM backend (OpenAI, Gemini, etc.) | \x60services/llm_provider.py:20\x60 (subclass \x60BaseLLMProvider\x60) | \x60agents/schema_agent.py:31\x60 (provider instantiation), \x60services/anthropic_graphrag.py:23\x60 (the \x60LLMInterface\x60 adapter pattern) |
+| Change which model is the default | \x60services/llm_provider.py:55\x60 (\x60DEFAULT_MODEL\x60) and \x60services/llm_provider.py:47\x60 (\x60MODELS\x60 list) | \x60services/llm_provider.py:51\x60 (\x60MODEL_LABELS\x60); the Streamlit selector in \x60app.py\x60 reads these |
+| Add a new node-import strategy (besides Heuristic / LLM) | \x60agents/graph_builder.py:74\x60 (\x60_get_heuristic_node_query\x60) and \x60agents/graph_builder.py:236\x60 (\x60build_graph\x60 strategy switch) | \x60agents/graph_builder.py:149\x60/\x60208\x60 (per-node strategy override) |
+| Support a new structured file format (e.g., JSON, Parquet) | \x60agents/graph_builder.py:74\x60 — heuristic queries currently assume \x60LOAD CSV\x60 | \x60agents/schema_agent.py:241\x60 (\x60load_context\x60 only reads first/second line) |
+| Change the unstructured-text splitter or loader | \x60agents/kg_pipeline_agent.py:23\x60 (\x60RegexTextSplitter\x60), \x60agents/kg_pipeline_agent.py:35\x60 (\x60MarkdownDataLoader\x60) | \x60agents/kg_pipeline_agent.py:169\x60 (\x60SimpleKGPipeline\x60 construction) |
+| Tune entity resolution thresholds | \x60agents/kg_pipeline_agent.py:225\x60 (Jaro-Winkler \x60threshold = 0.85\x60) | The Cypher in \x60agents/kg_pipeline_agent.py:242\x60 |
+| Lock down or extend Text-to-Cypher allowed verbs | \x60agents/text_to_cypher_agent.py:89\x60 (the \x60### SECURITY CONSTRAINTS ###\x60 block) | \x60services/graph_service.py:117\x60 (\x60validate_cypher\x60) |
+| Change the Neo4j Docker image/plugins/ports | \x60services/container_service.py:84\x60 (\x60docker run\x60 argv) | \x60README.md:117\x60 (the documented port note) |
+| Move artifact filenames or directory layout | \x60core/context.py:14\x60 (paths) and every agent's \x60load_context()\x60 (e.g. \x60agents/schema_agent.py:227\x60) | \x60state_manager.py:8\x60 (file paths in \x60__init__\x60), \x60services/container_service.py:77\x60 (the \x60import\x60 volume) |
+| Add a new debug-log rotation policy | \x60core/logging_utils.py:23\x60 (\x60rotate_module_specific_logs\x60) and \x60core/logging_utils.py:57\x60 (\x60ensure_single_backup_copy\x60) | \x60utils/context_scanner.py:79\x60 (filename regex) |
+
+---
+
+## Data Flow {#data-flow}
+<!-- last-verified: 2026-05-05 -->
+
+### Journey 1 — Structured CSV → Graph
+
+\x60\x60\x60mermaid
+sequenceDiagram
+    participant User
+    participant Orchestrator as Orchestrator<br/>(orchestrator.py)
+    participant SR as SchemaRefinementLoop
+    participant ESL as ExtractionSchemaLoop
+    participant GB as GraphBuilderAgent
+    participant FS as Context dir
+    participant Neo4j
+
+    User->>Orchestrator: choose "Build Graph"
+    Orchestrator->>SR: load intent + approved_files
+    SR->>SR: propose_schema → critique_schema (≤3 iters)
+    SR->>FS: write construction_plan.json
+    Orchestrator->>ESL: design entities + facts (interactive A/R)
+    ESL->>FS: write extraction_plan.json
+    Orchestrator->>GB: build_graph(strategy)
+    GB->>Neo4j: nuke_database()
+    GB->>Neo4j: CREATE CONSTRAINT … (per node label)
+    loop per node rule
+        GB->>Neo4j: LOAD CSV WITH HEADERS … MERGE (n:Label)
+    end
+    loop per relationship rule
+        GB->>Neo4j: LOAD CSV … MATCH (a) MATCH (b) MERGE (a)-[r]->(b)
+    end
+    GB->>FS: append debug/graph_build_log.md
+\x60\x60\x60
+
+The non-obvious choice here is the **clean-slate import**: \x60build_graph\x60 always runs \x60nuke_database()\x60 first (\x60agents/graph_builder.py:250\x60). This avoids stale-property accumulation and stale relationships when the schema changes, but it means re-running the build is destructive — there is no incremental import.
+
+### Journey 2 — Unstructured Text → Graph (GraphRAG)
+
+\x60\x60\x60mermaid
+graph LR
+    MD["*.md / *.txt<br/>in user_data/"] --> LD["MarkdownDataLoader<br/>kg_pipeline_agent.py:35"]
+    LD --"PdfDocument"--> SP["RegexTextSplitter<br/>kg_pipeline_agent.py:23"]
+    SP --"TextChunks"--> PIPE["SimpleKGPipeline<br/>(neo4j_graphrag)"]
+    PIPE --"invoke()"--> AL["AnthropicLLM adapter<br/>services/anthropic_graphrag.py"]
+    PIPE --"embed_query()"--> EM["SentenceTransformerEmbedder<br/>services/anthropic_graphrag.py:95"]
+    PIPE --"writes"--> NEO[("Neo4j: __Entity__ nodes")]
+    NEO --> ER["resolve_entities()<br/>kg_pipeline_agent.py:195"]
+    ER --"apoc.text.jaroWinklerDistance"--> NEO2[("Neo4j: CORRESPONDS_TO edges")]
+\x60\x60\x60
+
+The interesting choice: \x60__Entity__\x60 nodes from the GraphRAG pipeline live alongside domain nodes (e.g., \x60Product\x60) instead of replacing them, and \x60resolve_entities()\x60 links the two via a \x60CORRESPONDS_TO\x60 edge with a similarity score. This preserves provenance (which mention came from which document chunk) while still letting the graph be queried by canonical domain identity.
+
+### Journey 3 — NL question → Cypher answer
+
+\x60\x60\x60mermaid
+sequenceDiagram
+    participant User
+    participant T2C as TextToCypherAgent
+    participant GS as GraphService
+    participant LLM as AnthropicProvider
+
+    User->>T2C: "How many products have complaints?"
+    T2C->>GS: get_schema_visualization() (apoc.meta.schema)
+    GS-->>T2C: schema dict
+    T2C->>LLM: prompt with schema + few-shot + READ-ONLY rule
+    LLM-->>T2C: Cypher string
+    T2C->>GS: validate_cypher (EXPLAIN)
+    alt invalid syntax
+        T2C->>LLM: retry with previous error (≤2 retries)
+    end
+    T2C->>GS: send_query(cypher)
+    GS-->>T2C: list[dict]
+    T2C->>User: results + log to debug_llm_TextToCypherAgent.md
+\x60\x60\x60
+
+The retry-with-error-context pattern (\x60agents/text_to_cypher_agent.py:114\x60) lets the LLM self-correct cheap syntax mistakes without hand-tuned prompts, and the \x60EXPLAIN\x60 validation never executes the query, so a malformed proposal cannot mutate the graph even momentarily.
+
+---
+
+## Key Design Decisions {#decisions}
+<!-- last-verified: 2026-05-05 -->
+
+**1. Per-context directory + per-context Docker container** *(established: 2026 baseline)*
+Each project's data, plans, debug logs, and Neo4j volume live under one path; the container is named \x60neo4j-<context.name>\x60 (\x60services/container_service.py:16\x60). This means switching projects is a directory swap, and one project's database can never accidentally pollute another's. Tradeoff: only one context can run concurrently because ports \x607474\x60/\x607687\x60 are hard-coded.
+
+**2. Simulation mode instead of hard-fail when no API key** *(established: 2026 baseline)*
+\x60BaseAgent.__init__\x60 swallows the \x60ValueError\x60 from \x60AnthropicProvider\x60 and sets \x60provider=None\x60; \x60_generate\x60 then returns an empty-JSON stub (\x60agents/schema_agent.py:30\x60, \x60agents/schema_agent.py:43\x60). This lets the UI and tests run with zero API cost, at the cost of pipelines silently producing trivially-empty graphs if a key is genuinely expected. The LLM provider itself still raises (\x60services/llm_provider.py:60\x60) — the laxness is only at the agent layer.
+
+**3. Propose/critique loop with cap of 3 iterations** *(established: 2026 baseline)*
+Schema design uses two LLM personas — \x60SchemaProposalAgent\x60 writes JSON, \x60SchemaCriticAgent\x60 returns \x60VALID\x60/\x60RETRY\x60 plus prose feedback (\x60agents/schema_agent.py:267\x60). Capping at 3 prevents pathological back-and-forth on edge cases; the resulting \x60construction_plan.json\x60 is treated as the final contract regardless.
+
+**4. Heuristic-first Cypher with LLM as opt-in** *(established: 2026 baseline)*
+\x60GraphBuilderAgent._get_heuristic_node_query\x60 produces a \x60LOAD CSV WITH HEADERS … MERGE\x60 template directly from the construction plan; the LLM path (\x60_generate_llm_query\x60) is only used when the user picks \x60[L]LM\x60 or \x60[C]ompare\x60 (\x60agents/graph_builder.py:149\x60). The default strategy in \x60build_graph\x60 is \x60H\x60 (\x60agents/graph_builder.py:283\x60), keeping the common path deterministic and free of LLM cost.
+
+**5. Read-only Text-to-Cypher with EXPLAIN validation** *(established: 2026 baseline)*
+The system prompt forbids \x60CREATE\x60/\x60DELETE\x60/\x60MERGE\x60/\x60SET\x60 and the agent runs \x60EXPLAIN <cypher>\x60 before executing (\x60agents/text_to_cypher_agent.py:89\x60, \x60services/graph_service.py:127\x60). Combined, these mean a malformed or hostile NL query cannot mutate the graph even via a retry-loop hallucination.
+
+**6. State invalidation cascades downstream** *(established: 2026 baseline)*
+\x60mark_intent_updated\x60 and \x60mark_files_approved\x60 both stale the schema *and* graph (\x60state_manager.py:38\x60, \x60state_manager.py:44\x60); \x60mark_schema_valid\x60 also stales the graph. This guarantees that the \x60system_state.json\x60 shown in the UI never claims a graph is "BUILT" against an outdated schema.
+
+**7. Logs rotated per-module with single-backup retention** *(established: 2026 baseline)*
+Every \x60BaseAgent\x60 instance gets a fresh \x60debug_llm_<Module>_<ts>.md\x60; the previous one moves to \x60debug/backup/\x60 and older backups are deleted (\x60core/logging_utils.py:23\x60, \x60core/logging_utils.py:57\x60). Tradeoff: history beyond the previous run requires git, but the working \x60debug/\x60 directory stays scannable.
+
+---
+
+## Key Data Structures {#data-structures}
+<!-- last-verified: 2026-05-05 -->
+
+**\x60user_intent.json\x60** — written by \x60IntentAgent\x60, consumed by every downstream agent.
+\x60\x60\x60json
+{
+  "intent": "Root Cause Analysis of Customer Complaints",
+  "description": "Trace customer complaints from reviews back to specific menu items, ingredients, and service factors…",
+  "primary_entities": ["Customer", "Review", "Complaint", "MenuItem", "Ingredient"],
+  "reasoning": "This is a strong graph use case because…"
+}
+\x60\x60\x60
+
+**\x60construction_plan.json\x60** — flat dict keyed by rule ID. Each rule is either a node or a relationship.
+\x60\x60\x60json
+{
+  "Customer": {
+    "construction_type": "node",
+    "source_file": "reviews.txt",
+    "label": "Customer",
+    "unique_column_name": "customer_id",
+    "properties": ["customer_id", "customer_name"],
+    "transformation_note": "…"
+  },
+  "ABOUT_PRODUCT": {
+    "construction_type": "relationship",
+    "source_file": "products.csv",
+    "relationship_type": "ABOUT_PRODUCT",
+    "from_node_label": "CustomerReview",
+    "from_node_column": "extracted_product_name",
+    "to_node_label": "Product",
+    "to_node_column": "name",
+    "rule": "Use NLP to extract product names from Review text, then match against Product.name"
+  }
+}
+\x60\x60\x60
+\x60construction_type\x60 controls how \x60GraphBuilderAgent.build_graph\x60 routes the rule (\x60agents/graph_builder.py:267\x60). A relationship rule may name a \x60from_node_column\x60 that doesn't exist in the source headers — this is the "derived field" exception in the critic (\x60agents/schema_agent.py:184\x60).
+
+**\x60extraction_plan.json\x60** — written by \x60ExtractionSchemaLoop.save_plan\x60.
+\x60\x60\x60json
+{
+  "entities": ["Product", "Review", "Complaint"],
+  "facts": [
+    {"subject": "Review", "predicate": "MENTIONS", "object": "Product"},
+    {"subject": "Review", "predicate": "HAS_COMPLAINT", "object": "Complaint"}
+  ],
+  "model_used": "claude-haiku-4-5-20251001"
+}
+\x60\x60\x60
+
+**\x60approved_files.json\x60** — absolute paths the user has locked for the run.
+\x60\x60\x60json
+{ "files": ["/abs/path/<ctx>/user_data/reviews.txt", "…"] }
+\x60\x60\x60
+
+**\x60system_state.json\x60** — \x60StateManager\x60's persistent flags.
+\x60\x60\x60json
+{
+  "intent_defined": true,
+  "files_approved": true,
+  "schema_status": "VALID",   // PENDING | VALID | STALE
+  "graph_status": "BUILT",    // PENDING | BUILT | STALE
+  "extraction_designed": true,
+  "graphrag_status": "COMPLETE",
+  "last_updated": "2026-…"
+}
+\x60\x60\x60
+
+**Neo4j node convention** — domain nodes carry their type label (e.g. \x60:Customer\x60); GraphRAG-extracted nodes additionally carry the \x60__Entity__\x60 label and are linked to domain nodes via \x60[:CORRESPONDS_TO {score}]\x60 (\x60agents/kg_pipeline_agent.py:242\x60).
+
+---
+
+## Extension Points {#extension-points}
+<!-- last-verified: 2026-05-05 -->
+
+- **New LLM backend**: subclass \x60BaseLLMProvider\x60 in \x60services/llm_provider.py:20\x60, implement \x60generate()\x60 and \x60available_models()\x60, set \x60DEFAULT_MODEL\x60. Update \x60BaseAgent.__init__\x60 (\x60agents/schema_agent.py:30\x60) to choose providers (today it hard-codes \x60AnthropicProvider\x60). For the GraphRAG path, also write a \x60LLMInterface\x60 adapter in the style of \x60services/anthropic_graphrag.py:23\x60.
+- **New agent**: subclass \x60BaseAgent\x60 (\x60agents/schema_agent.py:13\x60), pass a unique \x60module_name\x60 so logs land in their own file, and call \x60self._generate(prompt, function_name=…)\x60 rather than the provider directly. Wire it into \x60Orchestrator.main_loop\x60 (\x60orchestrator.py:381\x60) and add a corresponding stage on \x60PipelineRunner\x60 (\x60utils/pipeline_runner.py:17\x60) for the web UI.
+- **New input file format**: extend \x60_get_heuristic_node_query\x60 (\x60agents/graph_builder.py:74\x60) — today it dispatches on \x60.txt\x60 vs CSV. Also broaden the schema-loop sample reader (\x60agents/schema_agent.py:241\x60) which currently calls \x60f.readline()\x60 twice and assumes the first two lines are header + sample row.
+- **New extraction strategy beyond NER + facts**: extend \x60ExtractionSchemaLoop\x60 (\x60agents/extraction_agent.py:128\x60) with a third agent class and a third \x60[A]pprove / [R]etry\x60 step, then update \x60extraction_plan.json\x60 consumers (\x60agents/kg_pipeline_agent.py:73\x60 builds prompts from the plan).
+- **New visualization**: parallel \x60agents/visualizer_agent.py\x60 — read from \x60graphdb\x60 only, write to \x60context.output_dir\x60. The current visualizer mints node colours from a hard-coded function (\x60agents/visualizer_agent.py:119\x60) — generalise that map for new domains.
+- **Custom Neo4j configuration**: edit the \x60docker run\x60 argv in \x60services/container_service.py:84\x60. The APOC plugin and \x60apoc_export_file_enabled\x60 are required; removing them breaks \x60export_graph\x60 (\x60services/graph_service.py:157\x60) and the schema introspection in \x60TextToCypherAgent\x60.
+
+---
+
+## External Dependencies {#dependencies}
+<!-- last-verified: 2026-05-05 -->
+
+| Dependency | Purpose | Runtime? | Network/FS? |
+|------------|---------|----------|-------------|
+| \x60anthropic\x60 | Claude API client | Yes | **Network** |
+| \x60neo4j\x60 | Bolt driver | Yes | **Network** (Bolt 7687) |
+| \x60neo4j-graphrag\x60 | \x60SimpleKGPipeline\x60, \x60LLMInterface\x60, \x60Embedder\x60 ABCs | Yes | Network (via adapter) |
+| \x60sentence-transformers\x60 | Local embeddings (default \x60all-MiniLM-L6-v2\x60) | Yes | **FS** (model cache), Network on first download |
+| \x60streamlit\x60 | Web UI | Yes (web) | Network (binds local port) |
+| \x60pandas\x60, \x60numpy\x60 | Data utilities (incidental in agents/tests) | Yes | No |
+| \x60json-repair\x60 | Tolerant JSON parsing for LLM output | Yes | No |
+| Docker (CLI) | Neo4j container lifecycle | Yes | **Network + FS** (volume mounts) |
+
+External services touched: the Anthropic Messages API (\x60services/llm_provider.py:100\x60) and the Neo4j Bolt endpoint of the locally-run container.
+
+---
+
+## Deployment / Operations {#operations}
+<!-- last-verified: 2026-05-05 -->
+
+The application runs as a single Python process. On startup, \x60Orchestrator.__init__\x60 (\x60orchestrator.py:32\x60) calls \x60ContainerService.start_container\x60 if no \x60neo4j-<ctx>\x60 container is running; the container exposes ports \x607474\x60 (HTTP) and \x607687\x60 (Bolt) and mounts three volumes:
+
+| Host path | Container path | Purpose |
+|-----------|----------------|---------|
+| \x60<ctx>/user_data/\x60 | \x60/var/lib/neo4j/import\x60 | Source files for \x60LOAD CSV\x60 and GraphML import/export |
+| \x60<ctx>/neo4j_home/data/\x60 | \x60/data\x60 | Database persistence |
+| \x60<ctx>/neo4j_home/logs/\x60 | \x60/logs\x60 | Neo4j logs |
+
+Required environment variables:
+
+| Variable | Purpose | Required | Default |
+|----------|---------|----------|---------|
+| \x60PROJECT_ANTHROPIC_API_KEY\x60 | Anthropic Claude API | No (simulation mode otherwise) | — |
+| \x60NEO4J_URI\x60 | Bolt URI | No | \x60bolt://localhost:7687\x60 |
+| \x60NEO4J_USERNAME\x60 | Neo4j user | No | \x60neo4j\x60 |
+| \x60NEO4J_PASSWORD\x60 | Neo4j password | No | \x60password\x60 |
+
+Health is verified by a \x60cypher-shell "RETURN 1"\x60 loop with a 30-second budget (\x60services/container_service.py:110\x60). Observability is filesystem-based: every LLM call appends to \x60<ctx>/debug/debug_llm_<Module>_<ts>.md\x60; build steps append to \x60<ctx>/debug/graph_build_log.md\x60.
+
+Platform constraint: Docker Desktop is required, and the orchestrator does not currently support a remote Neo4j (the container lifecycle assumes a local Docker daemon).
+
+---
+
+## Glossary {#glossary}
+<!-- last-verified: 2026-05-05 -->
+
+- **Construction plan** — the JSON contract from \x60SchemaRefinementLoop\x60 describing each node label and relationship type to materialise. \x60data/<ctx>/construction_plan.json\x60.
+- **Context** — a per-project directory plus its Docker container; modelled by \x60core/context.py:Context\x60.
+- **Critic** — the \x60SchemaCriticAgent\x60 that emits \x60VALID\x60 or \x60RETRY\x60 against a proposed schema (\x60agents/schema_agent.py:147\x60).
+- **\x60__Entity__\x60** — the auxiliary Neo4j label applied by \x60neo4j_graphrag.SimpleKGPipeline\x60 to nodes it extracts from text. Always co-occurs with a domain label.
+- **Extraction plan** — the entities + fact-triples designed by \x60ExtractionSchemaLoop\x60 and consumed by the GraphRAG prompt builder.
+- **Heuristic vs LLM strategy** — the two ways \x60GraphBuilderAgent\x60 produces Cypher: deterministic templates (\x60H\x60) or per-rule LLM generation (\x60L\x60). \x60[I]nteractive\x60 lets the user pick per node.
+- **Intent** — the user's stated goal, refined and validated into \x60user_intent.json\x60.
+- **Simulation mode** — the no-API-key branch of \x60BaseAgent._generate\x60 that returns an empty JSON stub instead of calling Anthropic (\x60agents/schema_agent.py:43\x60).
+- **Stale** — a \x60StateManager\x60 flag meaning the artifact still exists on disk but has been invalidated by an upstream change.
+
+---
+
+## End-to-End Use-Case Workflow {#workflow}
+<!-- last-verified: 2026-05-05 -->
+
+The canonical "complaints → ingredients" flow shipped in \x60data/restaurant_data/\x60:
+
+1. **User runs** \x60python3 orchestrator.py --context data/restaurant_data\x60 → \x60orchestrator.py:437\x60. \x60Orchestrator.__init__\x60 ensures the context directories exist (\x60core/context.py:34\x60) and starts \x60neo4j-restaurant_data\x60.
+2. **Define intent** (menu option 1) → spawns a subprocess running \x60agents/intent_agent.py\x60 (\x60orchestrator.py:140\x60). Output: \x60data/restaurant_data/user_intent.json\x60.
+3. **Approve files** (menu option 3) → \x60Orchestrator.approve_files\x60 (\x60orchestrator.py:105\x60) lists \x60user_data/\x60 and writes \x60approved_files.json\x60.
+4. **Negotiate schema** (menu option 4) → \x60SchemaRefinementLoop.run\x60 (\x60agents/schema_agent.py:253\x60) runs propose/critique up to 3 times, writes \x60construction_plan.json\x60 on \x60VALID\x60.
+5. **Design extraction logic** (menu option 5) → \x60ExtractionSchemaLoop.run\x60 (\x60agents/extraction_agent.py:237\x60) interactively approves entities then facts, writes \x60extraction_plan.json\x60.
+6. **Build graph** (menu option 6) → \x60GraphBuilderAgent.build_graph\x60 (\x60agents/graph_builder.py:236\x60) nukes Neo4j, creates uniqueness constraints, then imports nodes and relationships per the plan.
+7. **GraphRAG** (menu option 7, optional) → \x60KgPipelineAgent.run_pipeline\x60 (\x60agents/kg_pipeline_agent.py:132\x60) extracts entities from \x60.md\x60/\x60.txt\x60 files; \x60resolve_entities\x60 (\x60agents/kg_pipeline_agent.py:195\x60) links them to domain nodes via Jaro-Winkler.
+8. **Query** (menu option 12) → \x60TextToCypherAgent.run_interactive_loop\x60 (\x60agents/text_to_cypher_agent.py:172\x60) reads NL questions, generates read-only Cypher, validates with \x60EXPLAIN\x60, executes, and logs.
+9. **Visualise / export** (menu options 8–10) → \x60VisualizerAgent.run\x60 writes \x60output/schema_viz.html\x60; \x60Orchestrator.run_export\x60 snapshots to \x60output/<ctx>_dump.graphml\x60.
+
+Decision points along the workflow:
+
+| Decision | Choices | Effect |
+|----------|--------|--------|
+| Stage 6 strategy | \x60[H]euristic\x60 / \x60[L]LM\x60 / \x60[I]nteractive\x60 | Heuristic = deterministic templates, LLM = per-rule generation, Interactive = compare both per node |
+| Stage 7 vs Stage 6 | Run only one or both | CSV-only datasets skip 7; text-only datasets skip 6 |
+| Stage 4 outcome | \x60VALID\x60 within 3 iterations or fail | On failure, no \x60construction_plan.json\x60 is written; user must rephrase intent or re-approve files |
+
+---
+
+*Open \x60docs/system-overview.html\x60 in any browser to see the diagrams rendered. The markdown file is the source of truth; the HTML is a generated view and will be refreshed on the next \x60/explain-code system\x60 run.*
+`;
+
+  const renderer = new marked.Renderer();
+  const origCode = renderer.code.bind(renderer);
+  renderer.code = (code, lang) => lang === "mermaid"
+    ? `<div class="mermaid">${code}</div>`
+    : origCode(code, lang);
+
+  document.getElementById("content").innerHTML = marked.parse(md, { renderer });
+  await mermaid.run({ querySelector: ".mermaid" });
+</script>
+</body>
+</html>

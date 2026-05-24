@@ -10,7 +10,7 @@ MODE="${1:-interactive}"
 shift 2>/dev/null
 
 case "$MODE" in
-  --web | web)
+  --ui | ui)
     echo "Starting Web UI..."
     streamlit run app.py "$@"
     ;;
