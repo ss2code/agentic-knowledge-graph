@@ -49,3 +49,8 @@ data/*
 pwiki/raw/
 pwiki/.obsidian/
 pwiki/*
+
+# Cross-project regression sweep artifacts (~/Dev/projects/regression.sh)
+.regression-report.json
+.regression-screenshot.png
+.regression-streamlit.log
